@@ -18,7 +18,8 @@
 	<script src="./libs/jquery/jquery-3.1.1.min.js"></script>
 	<script src="./libs/spectrum/spectrum.js"></script>
 	<script src="./libs/jquery-ui/jquery-ui.min.js"></script>
-	<script src="./libs/three.js/build/three.min.js"></script> <script src="./libs/other/BinaryHeap.js"></script>
+	<script src="./libs/three.js/build/three.min.js"></script>
+	<script src="./libs/other/BinaryHeap.js"></script>
 	<script src="./libs/tween/tween.min.js"></script>
 	<script src="./libs/d3/d3.js"></script>
 	<script src="./libs/proj4/proj4.js"></script>
@@ -50,7 +51,7 @@
 			viewer.toggleSidebar();
 		});
 		
-		// 点群データの読み込み
+		// ★ここが重要！ cloud.js を読み込むように修正しました
 		Potree.loadPointCloud("./pointclouds/index/cloud.js", "index", e => {
 			let scene = viewer.scene;
 			let pointcloud = e.pointcloud;
@@ -138,9 +139,5 @@
 		});
 		
 	</script>
-	
-	
 </body>
 </html>
-
-
