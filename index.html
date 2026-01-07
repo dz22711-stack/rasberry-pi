@@ -51,7 +51,7 @@
 			viewer.toggleSidebar();
 		});
 		
-		// ★ここが重要！ cloud.js を読み込むように修正しました
+		// cloud.js を読み込む
 		Potree.loadPointCloud("./pointclouds/index/cloud.js", "index", e => {
 			let scene = viewer.scene;
 			let pointcloud = e.pointcloud;
@@ -63,7 +63,7 @@
 			
 			scene.addPointCloud(pointcloud);
 			
-			// --- ▼▼▼ ここからAmbient連携コード ▼▼▼ ---
+			// --- ▼▼▼ ここからAmbient連携コード (鍵付き) ▼▼▼ ---
 
 			// 1. 空調の場所（座標 5.74, 1.52, 0.60）にタグを作る
 			let a = new Potree.Annotation({
@@ -75,8 +75,11 @@
 
 			// 2. Ambientからデータを取ってくる関数
 			async function updateACData() {
-				// あなたのチャネルID (95062)
-				const url = "https://ambidata.io/api/v2/channels/95062/data?n=1";
+				// ★ここにあなたの「リードキー」を入れました！これで確実に見れます。
+				const channelId = "95062";
+				const readKey   = "167bbc984598399d"; 
+				
+				const url = `https://ambidata.io/api/v2/channels/${channelId}/data?readKey=${readKey}&n=1`;
 
 				try {
 					const response = await fetch(url);
@@ -84,9 +87,9 @@
 					
 					if (data.length > 0) {
 						const latest = data[0]; // 一番新しいデータ
-						const statusNum = latest.d1; // 1=ON, 0=OFF (Pythonコードより)
-						const setTemp   = latest.d2; // 設定温度 (OCR)
-						const roomTemp  = latest.d3; // 室温 (BME680)
+						const statusNum = latest.d1; // 1=ON, 0=OFF
+						const setTemp   = latest.d2; // 設定温度
+						const roomTemp  = latest.d3; // 室温
 						const time      = new Date(latest.created).toLocaleTimeString();
 
 						// 数字を「言葉」と「色」に変換
@@ -111,7 +114,7 @@
 								</p>
 								<hr style="border-color: #555;">
 								<iframe 
-									src="https://ambidata.io/ch/95062" 
+									src="https://ambidata.io/ch/95062?readKey=${readKey}" 
 									width="100%" height="300" 
 									style="border:none; background:white;">
 								</iframe>
@@ -122,7 +125,7 @@
 				} catch (e) {
 					console.error("Ambient取得エラー:", e);
 					a.title = "空調 (エラー)";
-					a.description = "データの取得に失敗しました。<br>Ambientの設定を確認してください。";
+					a.description = "データの取得に失敗しました。";
 				}
 			}
 
