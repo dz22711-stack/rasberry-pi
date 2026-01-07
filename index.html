@@ -69,6 +69,80 @@
 			material.activeAttributeName = "rgba";
 			
 			scene.addPointCloud(pointcloud);
+
+// --- ▼▼▼ ここから追加コード (Ambient連携: 空調) ▼▼▼ ---
+
+        // 1. 空調の場所（座標 5.74, 1.52, 0.60）にタグを作る
+        let a = new Potree.Annotation({
+            position: [5.74, 1.52, 0.60],
+            title: "空調 (読込中...)",
+            description: "データを取得しています..."
+        });
+        viewer.scene.annotations.add(a);
+
+        // 2. Ambientからデータを取ってくる関数
+        async function updateACData() {
+            // あなたのチャネルID (95062)
+            const url = "https://ambidata.io/api/v2/channels/95062/data?n=1";
+
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.length > 0) {
+                    const latest = data[0]; // 一番新しいデータ
+                    const statusNum = latest.d1; // 1=ON, 0=OFF (Pythonコードより)
+                    const setTemp   = latest.d2; // 設定温度 (OCR)
+                    const roomTemp  = latest.d3; // 室温 (BME680)
+                    const time      = new Date(latest.created).toLocaleTimeString();
+
+                    // 数字を「言葉」と「色」に変換
+                    let statusText = "⚫ 停止 (OFF)";
+                    let statusColor = "#aaaaaa"; // グレー
+                    
+                    if (statusNum == 1) {
+                        statusText = "🟢 稼働中 (ON)";
+                        statusColor = "#00ff00"; // 緑色
+                    }
+
+                    // タイトルを更新
+                    a.title = `空調: ${statusNum == 1 ? "ON" : "OFF"}`;
+
+                    // 詳細（吹き出しの中身）を作る
+                    a.description = `
+                        <div style="width: 500px; padding: 5px;">
+                            <h2 style="margin: 0; color: ${statusColor};">${statusText}</h2>
+                            <p style="color: white; font-size: 1.1em; margin: 5px 0;">
+                                設定温度: <b>${setTemp ? setTemp : "--"}℃</b> / 
+                                室温: <b>${roomTemp}℃</b>
+                            </p>
+                            <hr style="border-color: #555;">
+                            <iframe 
+                                src="https://ambidata.io/ch/95062" 
+                                width="100%" height="300" 
+                                style="border:none; background:white;">
+                            </iframe>
+                            <p style="text-align:right; font-size:0.8em; color:#ccc; margin:0;">更新時刻: ${time}</p>
+                        </div>
+                    `;
+                }
+            } catch (e) {
+                console.error("Ambient取得エラー:", e);
+                a.title = "空調 (エラー)";
+                a.description = "データの取得に失敗しました。<br>Ambientの設定を確認してください。";
+            }
+        }
+
+        // 3. 実行する（初回 & クリック時）
+        updateACData(); 
+        a.domElement.addEventListener("click", () => {
+            updateACData();     // 最新情報を取る
+            a.setExpanded(true); // 吹き出しを開く
+        });
+
+        // --- ▲▲▲ 追加コードここまで ▲▲▲ ---
+
+
 			
 			viewer.fitToScreen();
 		});
@@ -80,5 +154,6 @@
 	
   </body>
 </html>
+
 
 
