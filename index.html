@@ -39,7 +39,7 @@
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("研究室デジタルツイン (復旧版)");
+		viewer.setDescription("空調モニタリング (シンプル版)");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -58,125 +58,78 @@
 			scene.addPointCloud(pointcloud);
 			
 			// ==========================================
-			// 1. タグの作成（座標セット）
+			// 1. 空調のタグだけを作る
 			// ==========================================
-
-			// (A) 空調
-			let a_ac = new Potree.Annotation({
+			let a = new Potree.Annotation({
 				position: [5.74, 1.52, 0.60],
-				title: "空調", description: "接続中..."
+				title: "空調 (読込中...)",
+				description: "データを取得しています..."
 			});
-			viewer.scene.annotations.add(a_ac);
-
-			// (B) 照度
-			let a_lux = new Potree.Annotation({
-				position: [2.77, 4.16, 1.61],
-				title: "照度", description: "接続中..."
-			});
-			viewer.scene.annotations.add(a_lux);
-
-			// (C) CPU温度
-			let a_cpu = new Potree.Annotation({
-				position: [5.86, 2.04, 0.00],
-				title: "CPU", description: "接続中..."
-			});
-			viewer.scene.annotations.add(a_cpu);
-
-			// (D) 温湿度
-			let a_th = new Potree.Annotation({
-				position: [3.60, 1.76, -0.16],
-				title: "温湿度", description: "接続中..."
-			});
-			viewer.scene.annotations.add(a_th);
-
-			// (E) CO2
-			let a_co2 = new Potree.Annotation({
-				position: [5.77, 5.95, -0.22],
-				title: "CO2", description: "接続中..."
-			});
-			viewer.scene.annotations.add(a_co2);
-
+			viewer.scene.annotations.add(a);
 
 			// ==========================================
-			// 2. データ取得・表示更新
+			// 2. Ambientからデータを取る (グラフ機能なし)
 			// ==========================================
-
-			// ▼ 空調 (Ch: 95062)
 			function updateAC() {
+				// チャンネル: 95062, リードキー: 167bbc984598399d
 				const url = "https://ambidata.io/api/v2/channels/95062/data?readKey=167bbc984598399d&n=1";
-				
+
 				fetch(url)
-					.then(res => res.json())
+					.then(response => response.json())
 					.then(data => {
-						if(data.length > 0) {
+						if (data.length > 0) {
 							const latest = data[0];
+							
+							// d1: 1=ON, 0=OFF
+							// d2: 設定温度
+							// d3: 室温
 							const isOn = (latest.d1 == 1);
 							const setTemp = latest.d2 ? latest.d2 : "--";
 							const roomTemp = latest.d3;
-							const statusColor = isOn ? "#00ff00" : "#aaaaaa";
+							const time = new Date(latest.created).toLocaleTimeString();
 
-							a_ac.title = isOn ? "🟢 空調: ON" : "⚫ 空調: OFF";
-							
-							// 文字だけで表示（グラフなし）
-							a_ac.description = `
-								<div style="color: white; font-size: 1.2em;">
-									<h2 style="color:${statusColor}; border-bottom: 2px solid ${statusColor}; margin:0;">
+							// 色と文字を決める
+							let statusColor = "#aaaaaa"; // OFFはグレー
+							let statusText = "⚫ 空調: OFF";
+
+							if (isOn) {
+								statusColor = "#00ff00"; // ONは緑
+								statusText = "🟢 空調: ON";
+							}
+
+							// 表示を更新
+							a.title = statusText;
+							a.description = `
+								<div style="color: white; font-size: 1.2em; min-width: 250px;">
+									<h2 style="margin: 0; color: ${statusColor}; border-bottom: 2px solid ${statusColor};">
 										${isOn ? "稼働中" : "停止中"}
 									</h2>
-									<p>
+									<p style="margin: 10px 0;">
 										設定温度: <b>${setTemp} ℃</b><br>
-										室温: <b>${roomTemp} ℃</b>
+										現在室温: <b>${roomTemp} ℃</b>
 									</p>
-									<small style="color:#ccc">更新: ${new Date(latest.created).toLocaleTimeString()}</small>
+									<p style="text-align: right; font-size: 0.8em; color: #ccc; margin: 0;">
+										更新: ${time}
+									</p>
 								</div>
 							`;
 						}
 					})
-					.catch(e => { console.error(e); a_ac.title = "空調 (Err)"; });
+					.catch(error => {
+						console.error(error);
+						a.title = "空調 (エラー)";
+						a.description = "データの取得に失敗しました。";
+					});
 			}
 
-			// ▼ 環境センサー (Ch: 96975)
-			function updateEnv() {
-				const url = "https://ambidata.io/api/v2/channels/96975/data?readKey=bd6e6cb69b42f331&n=1";
-
-				fetch(url)
-					.then(res => res.json())
-					.then(data => {
-						if(data.length > 0) {
-							const latest = data[0];
-							const time = new Date(latest.created).toLocaleTimeString();
-
-							// (B) 照度
-							a_lux.title = `照度: ${latest.d5} lx`;
-							a_lux.description = `<div style="color:white; font-size:1.2em;"><b>${latest.d5} lx</b><br><small>${time}</small></div>`;
-
-							// (C) CPU
-							a_cpu.title = `CPU: ${latest.d6} ℃`;
-							a_cpu.description = `<div style="color:white; font-size:1.2em;"><b>${latest.d6} ℃</b><br><small>${time}</small></div>`;
-
-							// (D) 温湿度
-							a_th.title = `${latest.d3}℃ / ${latest.d4}%`;
-							a_th.description = `<div style="color:white; font-size:1.2em;">温度: <b>${latest.d3}℃</b><br>湿度: <b>${latest.d4}%</b><br><small>${time}</small></div>`;
-
-							// (E) CO2
-							a_co2.title = `CO2: ${latest.d2} ppm`;
-							a_co2.description = `<div style="color:white; font-size:1.2em;"><b>${latest.d2} ppm</b><br><small>${time}</small></div>`;
-						}
-					})
-					.catch(e => { console.error(e); });
-			}
-
-			// クリックで更新
-			[a_ac, a_lux, a_cpu, a_th, a_co2].forEach(a => {
-				a.domElement.addEventListener("click", () => {
-					updateAC(); updateEnv();
-					a.setExpanded(true);
-				});
-			});
-
-			// 初回実行
+			// すぐに実行
 			updateAC();
-			updateEnv();
+
+			// クリックした時も更新
+			a.domElement.addEventListener("click", () => {
+				updateAC();
+				a.setExpanded(true);
+			});
 
 			viewer.fitToScreen();
 		});
