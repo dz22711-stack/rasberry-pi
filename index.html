@@ -41,7 +41,7 @@
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("研究室デジタルツイン (全センサーグラフ化)");
+		viewer.setDescription("研究室デジタルツイン (Ambient完全連携)");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -60,121 +60,75 @@
 			scene.addPointCloud(pointcloud);
 			
 			// ==========================================
-			// 1. 先にタグを全部作って表示する
+			// 1. タグを定義（座標設定）
 			// ==========================================
 
 			// (A) 空調
 			let a_ac = new Potree.Annotation({
 				position: [5.74, 1.52, 0.60],
-				title: "空調", description: "データ読込中..."
+				title: "空調",
+				description: "データ取得中..."
 			});
 			viewer.scene.annotations.add(a_ac);
 
 			// (B) 照度
 			let a_lux = new Potree.Annotation({
 				position: [2.77, 4.16, 1.61],
-				title: "照度", description: "データ読込中..."
+				title: "照度",
+				description: "データ取得中..."
 			});
 			viewer.scene.annotations.add(a_lux);
 
 			// (C) CPU温度
 			let a_cpu = new Potree.Annotation({
 				position: [5.86, 2.04, 0.00],
-				title: "CPU", description: "データ読込中..."
+				title: "CPU",
+				description: "データ取得中..."
 			});
 			viewer.scene.annotations.add(a_cpu);
 
-			// (D) 温湿度 (空間中央)
+			// (D) 温湿度
 			let a_th = new Potree.Annotation({
 				position: [3.60, 1.76, -0.16],
-				title: "温湿度", description: "データ読込中..."
+				title: "温湿度",
+				description: "データ取得中..."
 			});
 			viewer.scene.annotations.add(a_th);
 
 			// (E) CO2
 			let a_co2 = new Potree.Annotation({
 				position: [5.77, 5.95, -0.22],
-				title: "CO2", description: "データ読込中..."
+				title: "CO2",
+				description: "データ取得中..."
 			});
 			viewer.scene.annotations.add(a_co2);
 
 
 			// ==========================================
-			// 2. データを取ってきて表示内容を更新する
+			// 2. データ取得関数
 			// ==========================================
 
 			// ▼ 空調 (Ch: 95062)
 			async function updateAC() {
-				// さっき成功したのと同じ通信方法
 				const url = "https://ambidata.io/api/v2/channels/95062/data?readKey=167bbc984598399d&n=100";
 				
 				fetch(url)
 					.then(res => res.json())
 					.then(data => {
-						// データを古い順に並べる（グラフ用）
+						// データを古い順に並べる
 						data.sort((a, b) => new Date(a.created) - new Date(b.created));
 						const latest = data[data.length - 1];
 
-						// 表示内容を作る
+						// 表示内容作成
 						const isOn = (latest.d1 == 1);
 						const setTemp = latest.d2 ? latest.d2 : "--";
 						const roomTemp = latest.d3;
+						const statusColor = isOn ? "#00ff00" : "#aaaaaa";
 
-						// タイトルの色変え
+						// タイトル更新
 						a_ac.title = isOn ? "🟢 空調: ON" : "⚫ 空調: OFF";
 
-						// 中身（グラフ置き場付きHTML）
-						const html = makeHtml(
+						// 中身（HTML）作成
+						a_ac.description = makeHtml(
 							isOn ? "稼働中" : "停止中", 
-							`設定: <b>${setTemp}℃</b> / 室温: <b>${roomTemp}℃</b>`, 
-							isOn ? "#00ff00" : "#aaaaaa", 
-							"chartAC", latest.created
-						);
-						a_ac.description = html;
-						
-						// グラフ用データをタグに保存しておく
-						a_ac.graphData = { 
-							labels: data.map(d => fmtTime(d.created)), 
-							values: data.map(d => d.d3), 
-							label: "室温(℃)", color: "255, 99, 132" 
-						};
-					})
-					.catch(e => { a_ac.title = "空調 (Err)"; });
-			}
-
-			// ▼ 環境センサー (Ch: 96975)
-			async function updateEnv() {
-				const url = "https://ambidata.io/api/v2/channels/96975/data?readKey=bd6e6cb69b42f331&n=100";
-				
-				fetch(url)
-					.then(res => res.json())
-					.then(data => {
-						data.sort((a, b) => new Date(a.created) - new Date(b.created));
-						const latest = data[data.length - 1];
-						const labels = data.map(d => fmtTime(d.created));
-
-						// (B) 照度
-						a_lux.title = `照度: ${latest.d5} lx`;
-						a_lux.description = makeHtml("照度", `<b>${latest.d5} lx</b>`, "#f1c40f", "chartLux", latest.created);
-						a_lux.graphData = { labels: labels, values: data.map(d=>d.d5), label: "照度(lx)", color: "255, 206, 86" };
-
-						// (C) CPU
-						a_cpu.title = `CPU: ${latest.d6} ℃`;
-						a_cpu.description = makeHtml("CPU温度", `<b>${latest.d6} ℃</b>`, "#9b59b6", "chartCpu", latest.created);
-						a_cpu.graphData = { labels: labels, values: data.map(d=>d.d6), label: "CPU(℃)", color: "153, 102, 255" };
-
-						// (D) 温湿度
-						a_th.title = `${latest.d3}℃ / ${latest.d4}%`;
-						a_th.description = makeHtml("温湿度", `温度: <b>${latest.d3}℃</b> / 湿度: <b>${latest.d4}%</b>`, "#e74c3c", "chartTH", latest.created);
-						a_th.graphData = { labels: labels, values: data.map(d=>d.d3), label: "温度(℃)", color: "255, 99, 132" };
-
-						// (E) CO2
-						a_co2.title = `CO2: ${latest.d2} ppm`;
-						a_co2.description = makeHtml("CO2濃度", `<b>${latest.d2} ppm</b>`, "#2ecc71", "chartCO2", latest.created);
-						a_co2.graphData = { labels: labels, values: data.map(d=>d.d2), label: "CO2(ppm)", color: "75, 192, 192" };
-					})
-					.catch(e => { console.error(e); });
-			}
-
-			// --- HTML作成ヘルパー関数 ---
-			function
+							`設定
