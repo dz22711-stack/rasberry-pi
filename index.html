@@ -39,7 +39,7 @@
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("研究室デジタルツイン (空調復旧版)");
+		viewer.setDescription("通信診断モード");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -57,88 +57,73 @@
 			material.shape = Potree.PointShape.SQUARE;
 			scene.addPointCloud(pointcloud);
 			
-			// ==========================================
-			// 1. 空調タグを作成
-			// ==========================================
+			// --- 診断用タグ ---
 			let a = new Potree.Annotation({
 				position: [5.74, 1.52, 0.60],
-				title: "空調 (読込中...)",
-				description: "Ambientに接続しています..."
+				title: "通信テスト中...",
+				description: "Ambientへ接続を試みています..."
 			});
 			viewer.scene.annotations.add(a);
 
-			// ==========================================
-			// 2. Ambientからデータを取得して表示
-			// ==========================================
-			function updateAirConditioner() {
-				// チャンネル: 95062, リードキー: 167bbc984598399d
-				const url = "https://ambidata.io/api/v2/channels/95062/data?readKey=167bbc984598399d&n=1";
+			function debugAmbient() {
+				// ステップ1: URLを作る
+				const channelId = "95062";
+				const readKey   = "167bbc984598399d"; 
+				const url = `https://ambidata.io/api/v2/channels/${channelId}/data?readKey=${readKey}&n=1`;
+				
+				a.description = "通信開始...<br>" + url;
 
+				// ステップ2: データを取ってみる
 				fetch(url)
-					.then(response => response.json())
+					.then(response => {
+						if (!response.ok) {
+							// 通信はできたけど、Ambientが「ダメ」と言った場合
+							throw new Error("サーバー拒否: " + response.status);
+						}
+						return response.json();
+					})
 					.then(data => {
-						// データが取れなかった場合の処理
-						if (!data || data.length === 0) {
-							a.title = "空調 (データなし)";
-							return;
-						}
-
-						const latest = data[0]; // 最新データ
-						
-						// --- データの意味 ---
-						// d1: ON(1) / OFF(0)
-						// d2: 設定温度 (OCR)
-						// d3: 室温 (BME680)
-						
-						const isOn = (latest.d1 == 1);
-						const setTemp = latest.d2 ? latest.d2 : "--";
-						const roomTemp = latest.d3;
-						const time = new Date(latest.created).toLocaleTimeString();
-
-						// --- 色と文字の決定 ---
-						let statusTitle = "";
-						let statusColor = "";
-						
-						if (isOn) {
-							statusTitle = "🟢 空調: ON";
-							statusColor = "#00ff00"; // 緑色
+						// 成功！データが空っぽかチェック
+						if (data.length === 0) {
+							a.title = "⚠ データ空っぽ";
+							a.description = "接続成功しましたが、<br>データが1件もありません。<br>Pythonは動いていますか？";
 						} else {
-							statusTitle = "⚫ 空調: OFF";
-							statusColor = "#aaaaaa"; // グレー
+							// 完全成功
+							const latest = data[0];
+							const status = (latest.d1 == 1) ? "ON (緑)" : "OFF (停止)";
+							
+							a.title = "✅ 成功！";
+							a.description = `
+								データを受信しました！<br>
+								----------------<br>
+								<b>状態:</b> ${status}<br>
+								<b>温度:</b> ${latest.d3} ℃<br>
+								<b>更新:</b> ${latest.created}
+							`;
+							console.log("受信データ:", latest);
 						}
-
-						// --- 表示の更新 ---
-						a.title = statusTitle;
-						
-						a.description = `
-							<div style="font-size: 1.2em; color: white; min-width: 250px;">
-								<h2 style="margin-top: 0; color: ${statusColor}; border-bottom: 2px solid ${statusColor};">
-									${isOn ? "稼働中" : "停止中"}
-								</h2>
-								<p>
-									設定温度: <b>${setTemp} ℃</b><br>
-									現在室温: <b>${roomTemp} ℃</b>
-								</p>
-								<hr>
-								<p style="text-align: right; font-size: 0.8em; color: #ccc;">
-									更新: ${time}
-								</p>
-							</div>
-						`;
 					})
 					.catch(error => {
-						console.error("Ambient Error:", error);
-						a.title = "空調 (エラー)";
-						a.description = "通信エラーが発生しました。";
+						// 失敗！エラー内容を表示
+						console.error(error);
+						a.title = "❌ エラー発生";
+						a.description = `
+							通信に失敗しました。<br>
+							----------------<br>
+							<b>原因:</b> ${error.message}<br>
+							<br>
+							<small>※ F12キーのConsoleも<br>確認してください</small>
+						`;
 					});
 			}
 
-			// 初回実行
-			updateAirConditioner();
+			// すぐ実行
+			debugAmbient();
 
-			// クリックした時も更新する
+			// クリックでも再実行
 			a.domElement.addEventListener("click", () => {
-				updateAirConditioner();
+				a.description = "再接続中...";
+				debugAmbient();
 				a.setExpanded(true);
 			});
 
