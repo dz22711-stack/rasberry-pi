@@ -43,7 +43,7 @@
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("研究室デジタルツイン (完全版)");
+		viewer.setDescription("研究室デジタルツイン (グラフ搭載)");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -62,13 +62,13 @@
 			scene.addPointCloud(pointcloud);
 			
 			// ==========================================
-			// 1. タグを先に全部作る（表示保証）
+			// 1. タグの定義 (場所の設定)
 			// ==========================================
 
-			// (A) 空調: ONなら光る
+			// (A) 空調
 			let a_ac = new Potree.Annotation({
 				position: [5.74, 1.52, 0.60],
-				title: "空調 (確認中)",
+				title: "空調 (読込中)",
 				description: "..."
 			});
 			viewer.scene.annotations.add(a_ac);
@@ -81,7 +81,7 @@
 			});
 			viewer.scene.annotations.add(a_lux);
 
-			// (C) CPU
+			// (C) CPU温度
 			let a_cpu = new Potree.Annotation({
 				position: [5.86, 2.04, 0.00],
 				title: "CPU",
@@ -107,5 +107,154 @@
 
 
 			// ==========================================
-			// 2. データを取ってきて表示を変える
-			//
+			// 2. データ取得と表示内容の作成
+			// ==========================================
+
+			// ▼ 空調 (Ch: 95062)
+			async function updateAC() {
+				const url = "https://ambidata.io/api/v2/channels/95062/data?readKey=167bbc984598399d&n=100";
+				try {
+					const res = await fetch(url);
+					const data = await res.json();
+					data.sort((a, b) => new Date(a.created) - new Date(b.created));
+					const latest = data[data.length - 1];
+
+					const isOn = (latest.d1 == 1);
+					const setTemp = latest.d2 ? latest.d2 : "--";
+					const roomTemp = latest.d3;
+
+					if (isOn) {
+						a_ac.title = "🟢 空調: ON"; 
+					} else {
+						a_ac.title = "⚫ 空調: OFF";
+					}
+
+					// ポップアップの中身（現在値＋グラフ用の場所）
+					const valStr = `設定: <b>${setTemp}℃</b> / 室温: <b>${roomTemp}℃</b>`;
+					a_ac.description = makePopupHtml("空調", valStr, isOn ? "#00ff00" : "#aaaaaa", latest.created, "chartAC");
+
+					// グラフ用データ (室温 d3)
+					a_ac.graphInfo = { 
+						labels: data.map(d=>fmtTime(d.created)), 
+						values: data.map(d=>d.d3), 
+						label: "室温(℃)", 
+						color: "255, 99, 132" 
+					};
+
+				} catch(e) { console.error(e); }
+			}
+
+			// ▼ 環境センサー (Ch: 96975)
+			async function updateEnv() {
+				const url = "https://ambidata.io/api/v2/channels/96975/data?readKey=bd6e6cb69b42f331&n=100";
+				try {
+					const res = await fetch(url);
+					const data = await res.json();
+					data.sort((a, b) => new Date(a.created) - new Date(b.created));
+					const latest = data[data.length - 1];
+					const timeLabels = data.map(d => fmtTime(d.created));
+
+					// (B) 照度 (d5)
+					a_lux.title = `照度: ${latest.d5} lx`;
+					a_lux.description = makePopupHtml("照度", `<b>${latest.d5} lx</b>`, "#f1c40f", latest.created, "chartLux");
+					a_lux.graphInfo = { labels: timeLabels, values: data.map(d=>d.d5), label: "照度(lx)", color: "255, 206, 86" };
+
+					// (C) CPU (d6)
+					a_cpu.title = `CPU: ${latest.d6}℃`;
+					a_cpu.description = makePopupHtml("CPU温度", `<b>${latest.d6} ℃</b>`, "#9b59b6", latest.created, "chartCpu");
+					a_cpu.graphInfo = { labels: timeLabels, values: data.map(d=>d.d6), label: "CPU(℃)", color: "153, 102, 255" };
+
+					// (D) 温湿度 (d3, d4)
+					a_th.title = `${latest.d3}℃ / ${latest.d4}%`;
+					a_th.description = makePopupHtml("温湿度", `温度: <b>${latest.d3}℃</b> / 湿度: <b>${latest.d4}%</b>`, "#e74c3c", latest.created, "chartTH");
+					a_th.graphInfo = { labels: timeLabels, values: data.map(d=>d.d3), label: "温度(℃)", color: "255, 99, 132" };
+
+					// (E) CO2 (d2)
+					a_co2.title = `CO2: ${latest.d2} ppm`;
+					a_co2.description = makePopupHtml("CO2濃度", `<b>${latest.d2} ppm</b>`, "#2ecc71", latest.created, "chartCO2");
+					a_co2.graphInfo = { labels: timeLabels, values: data.map(d=>d.d2), label: "CO2(ppm)", color: "75, 192, 192" };
+
+				} catch(e) { console.error(e); }
+			}
+
+			// --- HTML作成用関数 ---
+			function makePopupHtml(title, valHtml, color, timeStr, canvasId) {
+				// グラフエリアの高さなどを調整
+				return `
+					<div style="width: 400px; color: white;">
+						<h3 style="margin:0; border-bottom:2px solid ${color}; color:${color};">${title}</h3>
+						<div style="font-size: 1.3em; margin: 10px 0;">${valHtml}</div>
+						
+						<div style="background: rgba(255,255,255,0.9); padding: 5px; border-radius: 5px;">
+							<canvas id="${canvasId}" width="380" height="200"></canvas>
+						</div>
+						
+						<p style="text-align:right; font-size:0.8em; color:#ccc; margin:5px 0 0 0;">
+							更新: ${fmtTime(timeStr)}
+						</p>
+					</div>
+				`;
+			}
+			function fmtTime(iso) { return new Date(iso).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); }
+
+			// --- クリック時のグラフ描画 ---
+			function setupClick(annotation, canvasId) {
+				annotation.domElement.addEventListener("click", () => {
+					annotation.setExpanded(true);
+					// 少し待ってからグラフを描画（吹き出しが開くアニメーション待ち）
+					setTimeout(() => {
+						const ctx = document.getElementById(canvasId);
+						const info = annotation.graphInfo;
+						if(ctx && info) {
+							// 既存グラフをクリア
+							let chartStatus = Chart.getChart(canvasId); 
+							if (chartStatus != undefined) chartStatus.destroy();
+
+							// 新しいグラフを描画
+							new Chart(ctx, {
+								type: 'line',
+								data: {
+									labels: info.labels,
+									datasets: [{
+										label: info.label,
+										data: info.values,
+										borderColor: `rgba(${info.color}, 1)`,
+										backgroundColor: `rgba(${info.color}, 0.2)`,
+										borderWidth: 2,
+										fill: true,
+										pointRadius: 1 // 点を小さくして見やすく
+									}]
+								},
+								options: {
+									responsive: false,
+									scales: { 
+										y: { beginAtZero: false }, // 変化を強調
+										x: { display: false } // 時間ラベルが多すぎると重なるので隠す（ツールチップで見れる）
+									},
+									plugins: {
+										legend: { display: true }
+									}
+								}
+							});
+						}
+					}, 300);
+					updateAC(); updateEnv(); // 裏で最新情報も更新
+				});
+			}
+
+			// イベント設定
+			setupClick(a_ac, "chartAC");
+			setupClick(a_lux, "chartLux");
+			setupClick(a_cpu, "chartCpu");
+			setupClick(a_th, "chartTH");
+			setupClick(a_co2, "chartCO2");
+
+			// 初回実行
+			updateAC();
+			updateEnv();
+
+			viewer.fitToScreen();
+		});
+	</script>
+</body>
+</html>
