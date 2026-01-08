@@ -2,8 +2,6 @@
 <html lang="en">
 <head>
 	<meta charset="utf-8">
-	<meta name="description" content="">
-	<meta name="author" content="">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 	<title>Potree Viewer</title>
 
@@ -29,8 +27,6 @@
 	<script src="./libs/potree/potree.js"></script>
 	<script src="./libs/plasio/js/laslaz.js"></script>
 	
-	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-	
 	<div class="potree_container" style="position: absolute; width: 100%; height: 100%; left: 0px; top: 0px; ">
 		<div id="potree_render_area"></div>
 		<div id="potree_sidebar_container"></div>
@@ -43,7 +39,7 @@
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("研究室デジタルツイン (完全版)");
+		viewer.setDescription("空調モニタリング (復旧版)");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -62,170 +58,67 @@
 			scene.addPointCloud(pointcloud);
 			
 			// ==========================================
-			// 1. タグを先に全部作る（表示保証）
+			// 1. 空調のタグを表示
 			// ==========================================
-
-			// (A) 空調: ONなら光る
-			let a_ac = new Potree.Annotation({
+			let a = new Potree.Annotation({
 				position: [5.74, 1.52, 0.60],
-				title: "空調 (確認中)",
-				description: "..."
+				title: "空調 (読込中)",
+				description: "データを取得しています..."
 			});
-			viewer.scene.annotations.add(a_ac);
-
-			// (B) 照度
-			let a_lux = new Potree.Annotation({
-				position: [2.77, 4.16, 1.61],
-				title: "照度",
-				description: "..."
-			});
-			viewer.scene.annotations.add(a_lux);
-
-			// (C) CPU
-			let a_cpu = new Potree.Annotation({
-				position: [5.86, 2.04, 0.00],
-				title: "CPU",
-				description: "..."
-			});
-			viewer.scene.annotations.add(a_cpu);
-
-			// (D) 温湿度
-			let a_th = new Potree.Annotation({
-				position: [3.60, 1.76, -0.16],
-				title: "温湿度",
-				description: "..."
-			});
-			viewer.scene.annotations.add(a_th);
-
-			// (E) CO2
-			let a_co2 = new Potree.Annotation({
-				position: [5.77, 5.95, -0.22],
-				title: "CO2",
-				description: "..."
-			});
-			viewer.scene.annotations.add(a_co2);
-
+			viewer.scene.annotations.add(a);
 
 			// ==========================================
-			// 2. データを取ってきて表示を変える
+			// 2. データを取得して表示 (95062ch)
 			// ==========================================
+			function updateAC() {
+				// Ambientからデータを取得
+				const url = "https://ambidata.io/api/v2/channels/95062/data?readKey=167bbc984598399d&n=1";
 
-			// ▼ 空調 (Ch: 95062)
-			async function updateAC() {
-				const url = "https://ambidata.io/api/v2/channels/95062/data?readKey=167bbc984598399d&n=100";
-				try {
-					const res = await fetch(url);
-					const data = await res.json();
-					data.sort((a, b) => new Date(a.created) - new Date(b.created));
-					const latest = data[data.length - 1];
+				fetch(url)
+					.then(response => response.json())
+					.then(data => {
+						if (data.length > 0) {
+							const latest = data[0];
+							const isOn = (latest.d1 == 1);
+							const setTemp = latest.d2 ? latest.d2 : "--";
+							const roomTemp = latest.d3;
+							const time = new Date(latest.created).toLocaleTimeString();
 
-					// ON/OFF判定
-					const isOn = (latest.d1 == 1);
-					
-					if (isOn) {
-						// ONの時：タイトルを緑にして目立たせる
-						a_ac.title = "🟢 空調: ON"; 
-					} else {
-						// OFFの時：地味にする
-						a_ac.title = "⚫ 空調: OFF";
-					}
+							// ON/OFFで色を変える
+							const statusColor = isOn ? "#00ff00" : "#aaaaaa";
+							const statusText = isOn ? "🟢 空調: ON" : "⚫ 空調: OFF";
 
-					// 中身を作る
-					const statusText = isOn ? "稼働中 (ON)" : "停止 (OFF)";
-					const statusColor = isOn ? "#00ff00" : "#aaaaaa";
-					a_ac.description = makePopupHtml("空調", statusText, statusColor, latest.created, "chartAC");
-
-					// グラフデータ保存
-					a_ac.graphInfo = { labels: data.map(d=>fmtTime(d.created)), values: data.map(d=>d.d3), label: "室温(℃)", color: "255,99,132" };
-
-				} catch(e) { console.error(e); }
-			}
-
-			// ▼ 環境センサー (Ch: 96975)
-			async function updateEnv() {
-				const url = "https://ambidata.io/api/v2/channels/96975/data?readKey=bd6e6cb69b42f331&n=100";
-				try {
-					const res = await fetch(url);
-					const data = await res.json();
-					data.sort((a, b) => new Date(a.created) - new Date(b.created));
-					const latest = data[data.length - 1];
-					const timeLabels = data.map(d => fmtTime(d.created));
-
-					// (B) 照度
-					a_lux.title = `照度: ${latest.d5}`;
-					a_lux.description = makePopupHtml("照度", latest.d5+" lx", "#f1c40f", latest.created, "chartLux");
-					a_lux.graphInfo = { labels: timeLabels, values: data.map(d=>d.d5), label: "照度(lx)", color: "255,206,86" };
-
-					// (C) CPU
-					a_cpu.title = `CPU: ${latest.d6}℃`;
-					a_cpu.description = makePopupHtml("CPU温度", latest.d6+" ℃", "#9b59b6", latest.created, "chartCpu");
-					a_cpu.graphInfo = { labels: timeLabels, values: data.map(d=>d.d6), label: "CPU(℃)", color: "153,102,255" };
-
-					// (D) 温湿度
-					a_th.title = `${latest.d3}℃ / ${latest.d4}%`;
-					a_th.description = makePopupHtml("温湿度", `<b>${latest.d3}℃</b> / <b>${latest.d4}%</b>`, "#e74c3c", latest.created, "chartTH");
-					a_th.graphInfo = { labels: timeLabels, values: data.map(d=>d.d3), label: "温度(℃)", color: "255,99,132" };
-
-					// (E) CO2
-					a_co2.title = `CO2: ${latest.d2}`;
-					a_co2.description = makePopupHtml("CO2濃度", latest.d2+" ppm", "#2ecc71", latest.created, "chartCO2");
-					a_co2.graphInfo = { labels: timeLabels, values: data.map(d=>d.d2), label: "CO2(ppm)", color: "75,192,192" };
-
-				} catch(e) { console.error(e); }
-			}
-
-			// --- 共通：ポップアップHTML作成 ---
-			function makePopupHtml(title, valStr, color, timeStr, canvasId) {
-				return `
-					<div style="width: 350px; color: white;">
-						<h3 style="margin:0; border-bottom:2px solid ${color}; color:${color};">${title}</h3>
-						<div style="font-size: 1.5em; margin: 10px 0;">${valStr}</div>
-						<div style="background: rgba(255,255,255,0.9); padding: 5px; border-radius: 5px;">
-							<canvas id="${canvasId}" width="340" height="200"></canvas>
-						</div>
-						<p style="text-align:right; font-size:0.8em; color:#ccc; margin:0;">${fmtTime(timeStr)}</p>
-					</div>
-				`;
-			}
-			function fmtTime(iso) { return new Date(iso).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); }
-
-			// --- クリックイベント設定 ---
-			function setupClick(annotation, canvasId) {
-				annotation.domElement.addEventListener("click", () => {
-					annotation.setExpanded(true);
-					setTimeout(() => {
-						const ctx = document.getElementById(canvasId);
-						const info = annotation.graphInfo;
-						if(ctx && info) {
-							let chartStatus = Chart.getChart(canvasId); 
-							if (chartStatus != undefined) chartStatus.destroy();
-							new Chart(ctx, {
-								type: 'line',
-								data: {
-									labels: info.labels,
-									datasets: [{
-										label: info.label, data: info.values,
-										borderColor: `rgba(${info.color}, 1)`, backgroundColor: `rgba(${info.color}, 0.2)`,
-										borderWidth: 2, fill: true
-									}]
-								},
-								options: { responsive: false, scales: { y: { beginAtZero: false } } }
-							});
+							a.title = statusText;
+							a.description = `
+								<div style="color: white; font-size: 1.2em; min-width: 250px;">
+									<h2 style="margin: 0; color: ${statusColor}; border-bottom: 2px solid ${statusColor};">
+										${isOn ? "稼働中" : "停止中"}
+									</h2>
+									<p style="margin: 10px 0;">
+										設定温度: <b>${setTemp} ℃</b><br>
+										現在室温: <b>${roomTemp} ℃</b>
+									</p>
+									<p style="text-align: right; font-size: 0.8em; color: #ccc; margin: 0;">
+										更新: ${time}
+									</p>
+								</div>
+							`;
 						}
-					}, 300);
-					updateAC(); updateEnv(); // 裏で最新取得
-				});
+					})
+					.catch(error => {
+						console.error(error);
+						a.title = "空調 (エラー)";
+					});
 			}
 
-			setupClick(a_ac, "chartAC");
-			setupClick(a_lux, "chartLux");
-			setupClick(a_cpu, "chartCpu");
-			setupClick(a_th, "chartTH");
-			setupClick(a_co2, "chartCO2");
-
-			// 初回実行
+			// 実行
 			updateAC();
-			updateEnv();
+			
+			// クリックで更新
+			a.domElement.addEventListener("click", () => {
+				updateAC();
+				a.setExpanded(true);
+			});
 
 			viewer.fitToScreen();
 		});
