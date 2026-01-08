@@ -37,15 +37,13 @@
 	</div>
 
 	<script>
-	
 		window.viewer = new Potree.Viewer(document.getElementById("potree_render_area"));
 		
 		viewer.setEDLEnabled(true);
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		
-		viewer.setDescription("研究室デジタルツイン (個別座標表示)");
+		viewer.setDescription("研究室デジタルツイン (完全版)");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -57,26 +55,25 @@
 			let scene = viewer.scene;
 			let pointcloud = e.pointcloud;
 			let material = pointcloud.material;
+			
 			material.size = 1;
 			material.pointSizeType = Potree.PointSizeType.ADAPTIVE;
 			material.shape = Potree.PointShape.SQUARE;
 			scene.addPointCloud(pointcloud);
 			
-			// =========================================================
-			// 1. 空調 (Ch: 95062)
-			// =========================================================
+			// ==========================================
+			// 1. タグを先に全部作る（表示保証）
+			// ==========================================
+
+			// (A) 空調: ONなら光る
 			let a_ac = new Potree.Annotation({
 				position: [5.74, 1.52, 0.60],
-				title: "空調",
+				title: "空調 (確認中)",
 				description: "..."
 			});
 			viewer.scene.annotations.add(a_ac);
 
-			// =========================================================
-			// 2. 環境センサー (Ch: 96975) - 4つの場所に分割
-			// =========================================================
-			
-			// (A) 照度
+			// (B) 照度
 			let a_lux = new Potree.Annotation({
 				position: [2.77, 4.16, 1.61],
 				title: "照度",
@@ -84,7 +81,7 @@
 			});
 			viewer.scene.annotations.add(a_lux);
 
-			// (B) CPU温度
+			// (C) CPU
 			let a_cpu = new Potree.Annotation({
 				position: [5.86, 2.04, 0.00],
 				title: "CPU",
@@ -92,7 +89,7 @@
 			});
 			viewer.scene.annotations.add(a_cpu);
 
-			// (C) 温湿度
+			// (D) 温湿度
 			let a_th = new Potree.Annotation({
 				position: [3.60, 1.76, -0.16],
 				title: "温湿度",
@@ -100,7 +97,7 @@
 			});
 			viewer.scene.annotations.add(a_th);
 
-			// (D) CO2
+			// (E) CO2
 			let a_co2 = new Potree.Annotation({
 				position: [5.77, 5.95, -0.22],
 				title: "CO2",
@@ -109,135 +106,6 @@
 			viewer.scene.annotations.add(a_co2);
 
 
-			// =========================================================
-			// データ取得＆更新ロジック
-			// =========================================================
-			
-			// ▼ 空調の更新
-			async function updateAC() {
-				const url = "https://ambidata.io/api/v2/channels/95062/data?readKey=167bbc984598399d&n=100";
-				try {
-					const res = await fetch(url);
-					const data = await res.json();
-					data.sort((a, b) => new Date(a.created) - new Date(b.created));
-					const latest = data[data.length - 1];
-					
-					// ON/OFF判定
-					const isOn = (latest.d1 == 1);
-					const color = isOn ? "#00ff00" : "#aaaaaa";
-					const text = isOn ? "ON" : "OFF";
-					
-					a_ac.title = `空調: ${text}`;
-					a_ac.description = createPopupContent("空調", text, color, latest.created, "chartAC");
-					
-					// グラフ描画用データを保存
-					a_ac.graphData = { labels: data.map(d=>fmtTime(d.created)), values: data.map(d=>d.d3), label: "室温(℃)", color: "255, 99, 132" };
-				} catch(e) { a_ac.title = "空調 (Err)"; }
-			}
-
-			// ▼ 環境センサー一括更新 (d2, d3, d4, d5, d6)
-			async function updateEnv() {
-				const url = "https://ambidata.io/api/v2/channels/96975/data?readKey=bd6e6cb69b42f331&n=100";
-				try {
-					const res = await fetch(url);
-					const data = await res.json();
-					data.sort((a, b) => new Date(a.created) - new Date(b.created));
-					const latest = data[data.length - 1];
-
-					const timeLabels = data.map(d => fmtTime(d.created));
-
-					// (A) 照度 (d5)
-					a_lux.title = `照度: ${latest.d5} lx`;
-					a_lux.description = createPopupContent("照度", latest.d5 + " lx", "#f1c40f", latest.created, "chartLux");
-					a_lux.graphData = { labels: timeLabels, values: data.map(d=>d.d5), label: "照度(lx)", color: "255, 206, 86" };
-
-					// (B) CPU (d6)
-					a_cpu.title = `CPU: ${latest.d6} ℃`;
-					a_cpu.description = createPopupContent("CPU温度", latest.d6 + " ℃", "#9b59b6", latest.created, "chartCpu");
-					a_cpu.graphData = { labels: timeLabels, values: data.map(d=>d.d6), label: "CPU(℃)", color: "153, 102, 255" };
-
-					// (C) 温湿度 (d3, d4)
-					a_th.title = `${latest.d3}℃ / ${latest.d4}%`;
-					a_th.description = createPopupContent("温湿度", `<b>${latest.d3}℃</b> / <b>${latest.d4}%</b>`, "#e74c3c", latest.created, "chartTH");
-					// 温湿度は特別に「温度」をグラフ化 (湿度は文字のみ)
-					a_th.graphData = { labels: timeLabels, values: data.map(d=>d.d3), label: "温度(℃)", color: "255, 99, 132" };
-
-					// (D) CO2 (d2)
-					const co2Val = latest.d2;
-					let co2Color = "#2ecc71"; // 緑
-					if(co2Val > 1000) co2Color = "#e67e22"; // 注意(オレンジ)
-					if(co2Val > 1500) co2Color = "#e74c3c"; // 警告(赤)
-					
-					a_co2.title = `CO2: ${co2Val} ppm`;
-					a_co2.description = createPopupContent("CO2濃度", co2Val + " ppm", co2Color, latest.created, "chartCO2");
-					a_co2.graphData = { labels: timeLabels, values: data.map(d=>d.d2), label: "CO2(ppm)", color: "75, 192, 192" };
-
-				} catch(e) { console.error(e); }
-			}
-
-			// --- 共通のグラフ描画関数 ---
-			function drawGraph(canvasId, gData) {
-				setTimeout(() => {
-					const ctx = document.getElementById(canvasId);
-					if(ctx && gData) {
-						new Chart(ctx, {
-							type: 'line',
-							data: {
-								labels: gData.labels,
-								datasets: [{
-									label: gData.label,
-									data: gData.values,
-									borderColor: `rgba(${gData.color}, 1)`,
-									backgroundColor: `rgba(${gData.color}, 0.2)`,
-									borderWidth: 2, fill: true
-								}]
-							},
-							options: { responsive: false, scales: { y: { beginAtZero: false } } }
-						});
-					}
-				}, 300); // 吹き出しが開くのを少し待つ
-			}
-
-			// --- 共通のポップアップ作成関数 ---
-			function createPopupContent(title, valueHtml, color, timeStr, canvasId) {
-				return `
-					<div style="width: 350px; color: white;">
-						<h3 style="margin:0; border-bottom:2px solid ${color}; padding-bottom:5px;">${title}</h3>
-						<div style="font-size: 1.5em; margin: 10px 0;">${valueHtml}</div>
-						<div style="background: rgba(255,255,255,0.9); padding: 5px; border-radius: 5px;">
-							<canvas id="${canvasId}" width="340" height="200"></canvas>
-						</div>
-						<p style="text-align:right; font-size:0.8em; color:#ccc; margin:5px 0 0 0;">
-							${new Date(timeStr).toLocaleTimeString()}
-						</p>
-					</div>
-				`;
-			}
-			function fmtTime(iso) { return new Date(iso).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); }
-
-			// --- イベント登録 ---
-			[a_ac, a_lux, a_cpu, a_th, a_co2].forEach(a => {
-				a.domElement.addEventListener("click", () => {
-					// 最新データを再取得してから開く
-					if(a === a_ac) updateAC().then(() => { a.setExpanded(true); drawGraph("chartAC", a.graphData); });
-					else updateEnv().then(() => { 
-						a.setExpanded(true); 
-						// IDから適切なグラフを描く
-						if(a === a_lux) drawGraph("chartLux", a.graphData);
-						if(a === a_cpu) drawGraph("chartCpu", a.graphData);
-						if(a === a_th)  drawGraph("chartTH",  a.graphData);
-						if(a === a_co2) drawGraph("chartCO2", a.graphData);
-					});
-				});
-			});
-
-			// 初回実行
-			updateAC();
-			updateEnv();
-
-			viewer.fitToScreen();
-		});
-		
-	</script>
-</body>
-</html>
+			// ==========================================
+			// 2. データを取ってきて表示を変える
+			//
