@@ -45,7 +45,7 @@
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
 		
-		viewer.setDescription("研究室デジタルツイン (フル機能版)");
+		viewer.setDescription("研究室デジタルツイン (個別座標表示)");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -63,211 +63,177 @@
 			scene.addPointCloud(pointcloud);
 			
 			// =========================================================
-			// 1. 空調 (Ch: 95062) - 既存機能
+			// 1. 空調 (Ch: 95062)
 			// =========================================================
 			let a_ac = new Potree.Annotation({
 				position: [5.74, 1.52, 0.60],
-				title: "空調 (Click)",
+				title: "空調",
 				description: "..."
 			});
 			viewer.scene.annotations.add(a_ac);
 
-			const ch_ac = "95062";
-			const key_ac = "167bbc984598399d"; 
-
-			async function updateAC() {
-				const url = `https://ambidata.io/api/v2/channels/${ch_ac}/data?readKey=${key_ac}&n=100`;
-				try {
-					const response = await fetch(url);
-					const data = await response.json();
-					data.sort((a, b) => new Date(a.created) - new Date(b.created));
-					
-					if (data.length > 0) {
-						const latest = data[data.length - 1];
-						const statusNum = latest.d1; 
-						const setTemp = latest.d2;
-						const roomTemp = latest.d3;
-						const time = new Date(latest.created).toLocaleTimeString();
-
-						let statusText = "⚫ 停止 (OFF)";
-						let statusColor = "#aaaaaa";
-						if (statusNum == 1) {
-							statusText = "🟢 稼働中 (ON)";
-							statusColor = "#00ff00";
-						}
-
-						a_ac.title = `空調: ${statusNum == 1 ? "ON" : "OFF"}`;
-						a_ac.description = `
-							<div style="width: 400px; padding: 5px; color: white;">
-								<div style="font-size: 1.1em; margin-bottom: 5px;">
-									状態: <b style="color:${statusColor};">${statusText}</b><br>
-									設定: <b>${setTemp ? setTemp : "--"}℃</b> / 室温: <b>${roomTemp}℃</b>
-								</div>
-								<hr style="border-color:#555;">
-								<div style="background: rgba(255,255,255,0.9); padding: 5px; border-radius: 5px;">
-									<canvas id="chartAC" width="380" height="200"></canvas>
-								</div>
-								<p style="text-align:right; font-size:0.8em; color:#ccc; margin:0;">更新: ${time}</p>
-							</div>
-						`;
-					}
-					return data;
-				} catch (e) { console.error(e); a_ac.title = "空調 (エラー)"; }
-			}
-
-			a_ac.domElement.addEventListener("click", () => {
-				updateAC().then(data => {
-					a_ac.setExpanded(true);
-					if(data) {
-						setTimeout(() => {
-							const ctx = document.getElementById('chartAC');
-							if(ctx) {
-								new Chart(ctx, {
-									type: 'line',
-									data: {
-										labels: data.map(d => new Date(d.created).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})),
-										datasets: [{
-											label: '室温 (℃)',
-											data: data.map(d => d.d3),
-											borderColor: 'rgba(255, 99, 132, 1)',
-											backgroundColor: 'rgba(255, 99, 132, 0.2)',
-											borderWidth: 2, fill: true
-										}]
-									},
-									options: { responsive: false, scales: { y: { beginAtZero: false } } }
-								});
-							}
-						}, 500);
-					}
-				});
-			});
-			updateAC(); 
-
-
 			// =========================================================
-			// 2. 環境センサー＆ドア (Ch: 96975) - ★新機能
+			// 2. 環境センサー (Ch: 96975) - 4つの場所に分割
 			// =========================================================
-			let a_env = new Potree.Annotation({
-				position: [6.5, 1.52, 0.60], // ★必要なら座標を調整してください
-				title: "環境センサー (Click)",
+			
+			// (A) 照度
+			let a_lux = new Potree.Annotation({
+				position: [2.77, 4.16, 1.61],
+				title: "照度",
 				description: "..."
 			});
-			viewer.scene.annotations.add(a_env);
+			viewer.scene.annotations.add(a_lux);
 
-			const ch_env = "96975";
-			const key_env = "bd6e6cb69b42f331"; // ★あなたのリードキーを入れました
+			// (B) CPU温度
+			let a_cpu = new Potree.Annotation({
+				position: [5.86, 2.04, 0.00],
+				title: "CPU",
+				description: "..."
+			});
+			viewer.scene.annotations.add(a_cpu);
 
-			// グローバル変数にデータを保存
-			window.envData = [];
-			window.envChart = null;
+			// (C) 温湿度
+			let a_th = new Potree.Annotation({
+				position: [3.60, 1.76, -0.16],
+				title: "温湿度",
+				description: "..."
+			});
+			viewer.scene.annotations.add(a_th);
 
-			// グラフを切り替える関数
-			window.switchGraph = function(type) {
-				const ctx = document.getElementById('chartEnv');
-				if(!ctx || window.envData.length === 0) return;
+			// (D) CO2
+			let a_co2 = new Potree.Annotation({
+				position: [5.77, 5.95, -0.22],
+				title: "CO2",
+				description: "..."
+			});
+			viewer.scene.annotations.add(a_co2);
 
-				let label = "";
-				let key = "";
-				let color = "";
-				
-				// ボタンに合わせて色とデータを変える
-				if(type === 'co2')  { label="CO2(ppm)"; key="d2"; color="rgba(75, 192, 192, 1)"; } // 緑系
-				if(type === 'temp') { label="温度(℃)"; key="d3"; color="rgba(255, 99, 132, 1)"; } // 赤系
-				if(type === 'hum')  { label="湿度(%)"; key="d4"; color="rgba(54, 162, 235, 1)"; } // 青系
-				if(type === 'lux')  { label="照度(lx)"; key="d5"; color="rgba(255, 206, 86, 1)"; } // 黄系
-				if(type === 'cpu')  { label="CPU温度(℃)"; key="d6"; color="rgba(153, 102, 255, 1)"; } // 紫系
 
-				// グラフを再描画
-				if(window.envChart) window.envChart.destroy();
-
-				window.envChart = new Chart(ctx, {
-					type: 'line',
-					data: {
-						labels: window.envData.map(d => new Date(d.created).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})),
-						datasets: [{
-							label: label,
-							data: window.envData.map(d => d[key]),
-							borderColor: color,
-							backgroundColor: color.replace('1)', '0.2)'),
-							borderWidth: 2, fill: true
-						}]
-					},
-					options: { responsive: false, scales: { y: { beginAtZero: false } } }
-				});
-			}
-
-			async function updateEnv() {
-				// リードキーを使ってデータを取得
-				let url = `https://ambidata.io/api/v2/channels/${ch_env}/data?readKey=${key_env}&n=100`;
-
+			// =========================================================
+			// データ取得＆更新ロジック
+			// =========================================================
+			
+			// ▼ 空調の更新
+			async function updateAC() {
+				const url = "https://ambidata.io/api/v2/channels/95062/data?readKey=167bbc984598399d&n=100";
 				try {
-					const response = await fetch(url);
-					if (!response.ok) throw new Error("通信エラー");
-					const data = await response.json();
+					const res = await fetch(url);
+					const data = await res.json();
 					data.sort((a, b) => new Date(a.created) - new Date(b.created));
-					window.envData = data;
+					const latest = data[data.length - 1];
 					
-					if (data.length > 0) {
-						const latest = data[data.length - 1];
-						const time = new Date(latest.created).toLocaleTimeString();
-						
-						// 最新値の取り出し
-						const co2  = latest.d2;
-						const temp = latest.d3;
-						const hum  = latest.d4;
-						const lux  = latest.d5;
-						const cpu  = latest.d6;
-
-						a_env.title = `室温: ${temp}℃ / CO2: ${co2}ppm`;
-						a_env.description = `
-							<div style="width: 500px; padding: 5px; color: white;">
-								<div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
-									<div style="background:#333; padding:5px; border-radius:4px; flex:1; text-align:center;">🌡️ 温度<br><b>${temp}℃</b></div>
-									<div style="background:#333; padding:5px; border-radius:4px; flex:1; text-align:center;">💧 湿度<br><b>${hum}%</b></div>
-									<div style="background:#333; padding:5px; border-radius:4px; flex:1; text-align:center;">☁️ CO2<br><b>${co2}</b></div>
-									<div style="background:#333; padding:5px; border-radius:4px; flex:1; text-align:center;">💡 照度<br><b>${lux}lx</b></div>
-									<div style="background:#333; padding:5px; border-radius:4px; flex:1; text-align:center;">💻 CPU<br><b>${cpu}℃</b></div>
-								</div>
-								
-								<hr style="border-color:#555;">
-								<p style="margin:5px 0 5px 0; font-size:0.9em;">▼ 表示したいグラフを選択:</p>
-								
-								<div style="margin-bottom: 5px; display:flex; gap:5px;">
-									<button onclick="window.switchGraph('temp')">温度</button>
-									<button onclick="window.switchGraph('hum')">湿度</button>
-									<button onclick="window.switchGraph('co2')">CO2</button>
-									<button onclick="window.switchGraph('lux')">照度</button>
-									<button onclick="window.switchGraph('cpu')">CPU</button>
-								</div>
-
-								<div style="background: rgba(255,255,255,0.9); padding: 5px; border-radius: 5px;">
-									<canvas id="chartEnv" width="480" height="250"></canvas>
-								</div>
-								<p style="text-align:right; font-size:0.8em; color:#ccc; margin:0;">更新: ${time}</p>
-							</div>
-						`;
-					}
-					return data;
-				} catch (e) {
-					console.error(e);
-					a_env.title = "環境 (Keyエラー)";
-					a_env.description = "データを取得できませんでした。";
-				}
+					// ON/OFF判定
+					const isOn = (latest.d1 == 1);
+					const color = isOn ? "#00ff00" : "#aaaaaa";
+					const text = isOn ? "ON" : "OFF";
+					
+					a_ac.title = `空調: ${text}`;
+					a_ac.description = createPopupContent("空調", text, color, latest.created, "chartAC");
+					
+					// グラフ描画用データを保存
+					a_ac.graphData = { labels: data.map(d=>fmtTime(d.created)), values: data.map(d=>d.d3), label: "室温(℃)", color: "255, 99, 132" };
+				} catch(e) { a_ac.title = "空調 (Err)"; }
 			}
 
-			// クリック時の動作
-			a_env.domElement.addEventListener("click", () => {
-				updateEnv().then(data => {
-					a_env.setExpanded(true);
-					if(data) {
-						setTimeout(() => {
-							window.switchGraph('co2'); // 最初はCO2グラフを表示
-						}, 500);
+			// ▼ 環境センサー一括更新 (d2, d3, d4, d5, d6)
+			async function updateEnv() {
+				const url = "https://ambidata.io/api/v2/channels/96975/data?readKey=bd6e6cb69b42f331&n=100";
+				try {
+					const res = await fetch(url);
+					const data = await res.json();
+					data.sort((a, b) => new Date(a.created) - new Date(b.created));
+					const latest = data[data.length - 1];
+
+					const timeLabels = data.map(d => fmtTime(d.created));
+
+					// (A) 照度 (d5)
+					a_lux.title = `照度: ${latest.d5} lx`;
+					a_lux.description = createPopupContent("照度", latest.d5 + " lx", "#f1c40f", latest.created, "chartLux");
+					a_lux.graphData = { labels: timeLabels, values: data.map(d=>d.d5), label: "照度(lx)", color: "255, 206, 86" };
+
+					// (B) CPU (d6)
+					a_cpu.title = `CPU: ${latest.d6} ℃`;
+					a_cpu.description = createPopupContent("CPU温度", latest.d6 + " ℃", "#9b59b6", latest.created, "chartCpu");
+					a_cpu.graphData = { labels: timeLabels, values: data.map(d=>d.d6), label: "CPU(℃)", color: "153, 102, 255" };
+
+					// (C) 温湿度 (d3, d4)
+					a_th.title = `${latest.d3}℃ / ${latest.d4}%`;
+					a_th.description = createPopupContent("温湿度", `<b>${latest.d3}℃</b> / <b>${latest.d4}%</b>`, "#e74c3c", latest.created, "chartTH");
+					// 温湿度は特別に「温度」をグラフ化 (湿度は文字のみ)
+					a_th.graphData = { labels: timeLabels, values: data.map(d=>d.d3), label: "温度(℃)", color: "255, 99, 132" };
+
+					// (D) CO2 (d2)
+					const co2Val = latest.d2;
+					let co2Color = "#2ecc71"; // 緑
+					if(co2Val > 1000) co2Color = "#e67e22"; // 注意(オレンジ)
+					if(co2Val > 1500) co2Color = "#e74c3c"; // 警告(赤)
+					
+					a_co2.title = `CO2: ${co2Val} ppm`;
+					a_co2.description = createPopupContent("CO2濃度", co2Val + " ppm", co2Color, latest.created, "chartCO2");
+					a_co2.graphData = { labels: timeLabels, values: data.map(d=>d.d2), label: "CO2(ppm)", color: "75, 192, 192" };
+
+				} catch(e) { console.error(e); }
+			}
+
+			// --- 共通のグラフ描画関数 ---
+			function drawGraph(canvasId, gData) {
+				setTimeout(() => {
+					const ctx = document.getElementById(canvasId);
+					if(ctx && gData) {
+						new Chart(ctx, {
+							type: 'line',
+							data: {
+								labels: gData.labels,
+								datasets: [{
+									label: gData.label,
+									data: gData.values,
+									borderColor: `rgba(${gData.color}, 1)`,
+									backgroundColor: `rgba(${gData.color}, 0.2)`,
+									borderWidth: 2, fill: true
+								}]
+							},
+							options: { responsive: false, scales: { y: { beginAtZero: false } } }
+						});
 					}
+				}, 300); // 吹き出しが開くのを少し待つ
+			}
+
+			// --- 共通のポップアップ作成関数 ---
+			function createPopupContent(title, valueHtml, color, timeStr, canvasId) {
+				return `
+					<div style="width: 350px; color: white;">
+						<h3 style="margin:0; border-bottom:2px solid ${color}; padding-bottom:5px;">${title}</h3>
+						<div style="font-size: 1.5em; margin: 10px 0;">${valueHtml}</div>
+						<div style="background: rgba(255,255,255,0.9); padding: 5px; border-radius: 5px;">
+							<canvas id="${canvasId}" width="340" height="200"></canvas>
+						</div>
+						<p style="text-align:right; font-size:0.8em; color:#ccc; margin:5px 0 0 0;">
+							${new Date(timeStr).toLocaleTimeString()}
+						</p>
+					</div>
+				`;
+			}
+			function fmtTime(iso) { return new Date(iso).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); }
+
+			// --- イベント登録 ---
+			[a_ac, a_lux, a_cpu, a_th, a_co2].forEach(a => {
+				a.domElement.addEventListener("click", () => {
+					// 最新データを再取得してから開く
+					if(a === a_ac) updateAC().then(() => { a.setExpanded(true); drawGraph("chartAC", a.graphData); });
+					else updateEnv().then(() => { 
+						a.setExpanded(true); 
+						// IDから適切なグラフを描く
+						if(a === a_lux) drawGraph("chartLux", a.graphData);
+						if(a === a_cpu) drawGraph("chartCpu", a.graphData);
+						if(a === a_th)  drawGraph("chartTH",  a.graphData);
+						if(a === a_co2) drawGraph("chartCO2", a.graphData);
+					});
 				});
 			});
 
-			updateEnv(); // 初回実行
+			// 初回実行
+			updateAC();
+			updateEnv();
 
 			viewer.fitToScreen();
 		});
