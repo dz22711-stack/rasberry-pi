@@ -39,7 +39,7 @@
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("Step 3: 正しいチャネル分け (空調 & 照度)");
+		viewer.setDescription("Step 4: 照度判定 (ユーザー専用設定)");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -60,18 +60,15 @@
 			// ==========================================
 			// 1. タグの設置
 			// ==========================================
-			
-			// (A) 空調タグ
 			let a_ac = new Potree.Annotation({
 				position: [5.74, 1.52, 0.60],
-				title: "空調", description: "接続中..."
+				title: "空調", description: "..."
 			});
 			viewer.scene.annotations.add(a_ac);
 
-			// (B) 照度タグ
 			let a_lux = new Potree.Annotation({
 				position: [2.77, 4.16, 1.61],
-				title: "照度", description: "接続中..."
+				title: "照度", description: "..."
 			});
 			viewer.scene.annotations.add(a_lux);
 
@@ -80,7 +77,7 @@
 			// 2. データ取得処理
 			// ==========================================
 
-			// ▼【95062】空調データの取得 (d1:ON/OFF, d2:設定, d3:気温)
+			// ▼【95062】空調データ
 			function updateAC() {
 				const url = "https://ambidata.io/api/v2/channels/95062/data?readKey=167bbc984598399d&n=1";
 				fetch(url)
@@ -88,13 +85,9 @@
 					.then(data => {
 						if (data.length > 0) {
 							const latest = data[0];
-							// d1が1ならON
 							const isOn = (latest.d1 == 1);
-							// d2が設定温度
 							const setTemp = latest.d2 || "--";
-							// d3がカメラ側の気温（もし0なら0と表示されます）
-							const camTemp = latest.d3; 
-							
+							const camTemp = latest.d3;
 							const time = new Date(latest.created).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
 							const color = isOn ? "#00ff00" : "#aaaaaa";
 
@@ -116,7 +109,7 @@
 					.catch(e => { a_ac.title = "空調 (Err)"; });
 			}
 
-			// ▼【96975】照度データの取得 (d5:Lux)
+			// ▼【96975】照度データ (あなた専用基準)
 			function updateLux() {
 				const url = "https://ambidata.io/api/v2/channels/96975/data?readKey=bd6e6cb69b42f331&n=1";
 				fetch(url)
@@ -124,20 +117,38 @@
 					.then(data => {
 						if (data.length > 0) {
 							const latest = data[0];
-							// d5が照度
-							const luxVal = latest.d5;
-							
+							const luxVal = Number(latest.d5);
 							const time = new Date(latest.created).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-							const color = "#f1c40f"; // 黄色
+							
+							// --- ユーザー専用判定ロジック ---
+							// 126 lux 前後を「適正」とする設定
+							let judgeText = "";
+							let judgeColor = "";
 
-							a_lux.title = `照度: ${luxVal} lx`;
+							if (luxVal >= 200) {
+								judgeText = "明るい"; 
+								judgeColor = "#00b894"; // 緑
+							} else if (luxVal >= 80) {
+								judgeText = "適正"; // ★ここに126luxが含まれます
+								judgeColor = "#0984e3"; // ベストの青
+							} else {
+								judgeText = "暗い"; 
+								judgeColor = "#d63031"; // 赤
+							}
+
+							const titleColor = "#f1c40f";
+
+							a_lux.title = `照度: ${luxVal} lx (${judgeText})`;
 							a_lux.description = `
-								<div style="color: white; font-size: 1.2em; min-width: 200px;">
-									<h2 style="margin: 0; color: ${color}; border-bottom: 2px solid ${color};">
-										照度センサー
+								<div style="color: white; font-size: 1.2em; min-width: 220px;">
+									<h2 style="margin: 0; color: ${titleColor}; border-bottom: 2px solid ${titleColor};">
+										My環境チェッカー
 									</h2>
-									<p style="margin: 10px 0; font-size: 1.5em;">
+									<p style="margin: 15px 0 5px 0; font-size: 2.0em; text-align:center;">
 										<b>${luxVal} lx</b>
+									</p>
+									<p style="text-align: center; margin: 0 0 15px 0;">
+										判定: <span style="font-weight:bold; color:${judgeColor}; font-size:1.4em;">${judgeText}</span>
 									</p>
 									<p style="text-align: right; font-size: 0.8em; color: #ccc;">更新: ${time}</p>
 								</div>
@@ -150,12 +161,9 @@
 			// ==========================================
 			// 3. 実行
 			// ==========================================
-			
-			// 初回実行
 			updateAC();
 			updateLux();
 
-			// クリックで更新
 			a_ac.domElement.addEventListener("click", () => { updateAC(); a_ac.setExpanded(true); });
 			a_lux.domElement.addEventListener("click", () => { updateLux(); a_lux.setExpanded(true); });
 
