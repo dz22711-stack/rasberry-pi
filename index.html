@@ -27,8 +27,6 @@
 	<script src="./libs/potree/potree.js"></script>
 	<script src="./libs/plasio/js/laslaz.js"></script>
 	
-	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-	
 	<div class="potree_container" style="position: absolute; width: 100%; height: 100%; left: 0px; top: 0px; ">
 		<div id="potree_render_area"></div>
 		<div id="potree_sidebar_container"></div>
@@ -41,7 +39,7 @@
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("空調グラフ表示 (確定版)");
+		viewer.setDescription("通信診断モード");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -60,101 +58,80 @@
 			scene.addPointCloud(pointcloud);
 			
 			// ==========================================
-			// 1. 空調のタグを作成
+			// 1. 診断用タグを表示
 			// ==========================================
-			let a_ac = new Potree.Annotation({
+			let a = new Potree.Annotation({
 				position: [5.74, 1.52, 0.60],
-				title: "空調",
-				description: "データ読込中..."
+				title: "通信テスト",
+				description: "Ambientへ接続を試みています..."
 			});
-			viewer.scene.annotations.add(a_ac);
+			viewer.scene.annotations.add(a);
 
 			// ==========================================
-			// 2. データ取得＆グラフ化
+			// 2. 診断実行
 			// ==========================================
-			function updateAC() {
-				// Ambientの空調データ (95062) を取得
-				const url = "https://ambidata.io/api/v2/channels/95062/data?readKey=167bbc984598399d&n=100";
+			function runDiagnosis() {
+				// チャンネル95062 (空調) から最新1件だけ取得してみる
+				const url = "https://ambidata.io/api/v2/channels/95062/data?readKey=167bbc984598399d&n=1";
+
+				a.description = "通信開始...<br>" + url;
 
 				fetch(url)
-					.then(res => res.json())
+					.then(response => {
+						if (!response.ok) {
+							throw new Error("サーバー拒否: " + response.status);
+						}
+						return response.json();
+					})
 					.then(data => {
-						// 日付順に並べ替え
-						data.sort((a, b) => new Date(a.created) - new Date(b.created));
-						
-						const latest = data[data.length - 1]; // 最新
-						const isOn = (latest.d1 == 1);
-						const statusColor = isOn ? "#00ff00" : "#aaaaaa";
-
-						// タグのタイトル更新
-						a_ac.title = isOn ? "🟢 空調: ON" : "⚫ 空調: OFF";
-
-						// ポップアップの中身 (グラフ置き場含む)
-						a_ac.description = `
-							<div style="width: 380px; color: white;">
-								<h2 style="border-bottom: 2px solid ${statusColor}; color: ${statusColor}; margin: 0;">
-									${isOn ? "稼働中" : "停止中"}
-								</h2>
-								<div style="font-size: 1.2em; margin: 10px 0;">
-									設定: <b>${latest.d2 || "--"}℃</b> / 室温: <b>${latest.d3}℃</b>
+						// 成功した場合
+						if (data.length === 0) {
+							a.title = "⚠ データ空っぽ";
+							a.description = "接続はできましたが、データが1件もありません。<br>(Ambientにデータが届いていません)";
+						} else {
+							const latest = data[0];
+							const time = new Date(latest.created).toLocaleTimeString();
+							
+							a.title = "✅ 成功！";
+							a.description = `
+								<div style="color:white; font-size:1.2em;">
+									<b>通信成功しました！</b><br>
+									----------------<br>
+									室温: ${latest.d3} ℃<br>
+									更新: ${time}<br>
+									----------------<br>
+									※この表示が出れば、Web側は正常です。
 								</div>
-								<div style="background: rgba(255,255,255,0.9); padding: 5px; border-radius: 5px;">
-									<canvas id="chartAC" width="360" height="200"></canvas>
-								</div>
+							`;
+						}
+					})
+					.catch(error => {
+						// 失敗した場合（ここが重要）
+						console.error(error);
+						a.title = "❌ 通信エラー";
+						a.description = `
+							<div style="color:red; background:white; padding:5px;">
+								<b>エラーが発生しました</b><br>
+								原因: ${error.message}<br>
+								<br>
+								考えられる理由:<br>
+								・Wi-Fiの制限<br>
+								・セキュリティソフト<br>
+								・URLの間違い
 							</div>
 						`;
-
-						// グラフ用データを保存
-						a_ac.graphData = {
-							labels: data.map(d => new Date(d.created).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})),
-							values: data.map(d => d.d3),
-							color: "255, 99, 132"
-						};
-					})
-					.catch(err => {
-						console.error(err);
-						a_ac.title = "空調 (エラー)";
 					});
 			}
 
-			// ==========================================
-			// 3. クリック時の動作
-			// ==========================================
-			if (a_ac.domElement) {
-				a_ac.domElement.addEventListener("click", () => {
-					a_ac.setExpanded(true);
-					
-					// 0.3秒待ってからグラフを描画
-					setTimeout(() => {
-						const ctx = document.getElementById("chartAC");
-						const info = a_ac.graphData;
-						if (ctx && info) {
-							let existing = Chart.getChart("chartAC");
-							if (existing) existing.destroy();
+			// すぐ実行
+			runDiagnosis();
 
-							new Chart(ctx, {
-								type: 'line',
-								data: {
-									labels: info.labels,
-									datasets: [{
-										label: "室温 (℃)",
-										data: info.values,
-										borderColor: `rgba(${info.color}, 1)`,
-										backgroundColor: `rgba(${info.color}, 0.2)`,
-										borderWidth: 2, fill: true
-									}]
-								},
-								options: { responsive: false, scales: { y: { beginAtZero: false }, x: { display: false } } }
-							});
-						}
-					}, 300);
-
-					updateAC();
-				});
-			}
-
-			// 初回実行
-			updateAC();
+			// クリックでも再実行
+			a.domElement.addEventListener("click", () => {
+				a.description = "再接続中...";
+				runDiagnosis();
+				a.setExpanded(true);
+			});
 
 			viewer.fitToScreen();
 		});
