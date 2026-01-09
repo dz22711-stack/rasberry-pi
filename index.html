@@ -39,7 +39,7 @@
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("全センサー完全版 (ガス判定付き)");
+		viewer.setDescription("全センサー + PM2.5 (座標調整版)");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -58,7 +58,7 @@
 			scene.addPointCloud(pointcloud);
 			
 			// ==========================================
-			// 1. タグの設置 (計7個)
+			// 1. タグの設置 (計8個)
 			// ==========================================
 			
 			// (A) 空調
@@ -96,9 +96,9 @@
 			});
 			viewer.scene.annotations.add(a_co2);
 
-			// (F) 気圧
+			// (F) 気圧 (位置修正: 7.30, 7.66, -0.22)
 			let a_pres = new Potree.Annotation({
-				position: [5.99, 6.18, -0.22],
+				position: [7.30, 7.66, -0.22],
 				title: "気圧", description: "..."
 			});
 			viewer.scene.annotations.add(a_pres);
@@ -109,6 +109,13 @@
 				title: "ガス", description: "..."
 			});
 			viewer.scene.annotations.add(a_gas);
+
+			// (H) PM2.5 (NEW! 5.22, 3.30, -0.92)
+			let a_pm25 = new Potree.Annotation({
+				position: [5.22, 3.30, -0.92],
+				title: "PM2.5", description: "..."
+			});
+			viewer.scene.annotations.add(a_pm25);
 
 
 			// ==========================================
@@ -128,7 +135,7 @@
 			// 3. データ取得処理
 			// ==========================================
 
-			// ▼【95062】カメラ側 (空調d1-d3, 気圧d5, ガスd6)
+			// ▼【95062】カメラ側 (空調d1-3, 気圧d5, ガスd6, PM2.5 d7)
 			function updateCameraData() {
 				const url = "https://ambidata.io/api/v2/channels/95062/data?readKey=167bbc984598399d&n=10";
 				fetch(url).then(res=>res.json()).then(data => {
@@ -155,61 +162,68 @@
 						const presColor = "#8e44ad"; // 紫
 						a_pres.title = `気圧: ${pres} hPa`;
 						a_pres.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:${presColor}; border-bottom:2px solid ${presColor};">気圧 (BME680)</h2><div style="margin:15px 0; text-align:center;"><div style="font-size:2.0em;"><b>${pres} hPa</b></div></div><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${timeStr}</p></div>`;
-					} else {
-						a_pres.title = "気圧: -- hPa";
-					}
+					} else { a_pres.title = "気圧: --"; }
 
-					// --- 3. ガス (d6) --- 判定ロジック追加
+					// --- 3. ガス (d6) ---
 					const rawGas = findValidValue(data, "d6");
 					if (rawGas !== null) {
 						const gasVal = Number(rawGas);
-						const gasK = (gasVal / 1000).toFixed(1); // kΩに変換
-						
-						// ガス判定 (抵抗値が高いほどきれい)
-						let gasJudge = "汚れている";
-						let gasColor = "#e74c3c"; // 赤
+						const gasK = (gasVal / 1000).toFixed(1);
+						let gasJudge = "汚れている", gasColor = "#e74c3c";
+						if (gasVal >= 50000) { gasJudge = "きれい"; gasColor = "#2ecc71"; }
+						else if (gasVal >= 10000) { gasJudge = "普通"; gasColor = "#f39c12"; }
+						const titleColor = "#95a5a6";
+						a_gas.title = `ガス: ${gasK} kΩ (${gasJudge})`;
+						a_gas.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:${titleColor}; border-bottom:2px solid ${titleColor};">ガスセンサー</h2><div style="margin:15px 0; text-align:center;"><div style="font-size:2.0em;"><b>${gasK} kΩ</b></div></div><p style="text-align:center; margin:0 0 15px 0;">判定: <span style="font-weight:bold; color:${gasColor}; font-size:1.4em;">${gasJudge}</span></p><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${timeStr}</p></div>`;
+					} else { a_gas.title = "ガス: --"; }
 
-						if (gasVal >= 50000) { // 50kΩ以上
-							gasJudge = "きれい";
-							gasColor = "#2ecc71"; // 緑
-						} else if (gasVal >= 10000) { // 10kΩ～50kΩ
-							gasJudge = "普通";
-							gasColor = "#f39c12"; // 黄
+					// --- 4. PM2.5 (d7) --- NEW!
+					const rawPm = findValidValue(data, "d7");
+					if (rawPm !== null) {
+						const pm = Number(rawPm);
+						
+						// 環境省基準等を参考にした簡易判定
+						let pmJudge = "多い";
+						let pmColor = "#e74c3c"; // 赤
+						if (pm < 15) {
+							pmJudge = "きれい";
+							pmColor = "#3498db"; // 青
+						} else if (pm < 35) {
+							pmJudge = "普通";
+							pmColor = "#2ecc71"; // 緑
+						} else {
+							// 35以上
+							pmJudge = "注意";
+							pmColor = "#f1c40f"; // 黄
 						}
 
-						const titleColor = "#95a5a6"; // グレー
+						const tCol = "#7f8c8d"; // グレー
 
-						a_gas.title = `ガス: ${gasK} kΩ (${gasJudge})`;
-						a_gas.description = `
+						a_pm25.title = `PM2.5: ${pm} µg`;
+						a_pm25.description = `
 							<div style="color: white; font-size: 1.2em; min-width: 200px;">
-								<h2 style="margin: 0; color: ${titleColor}; border-bottom: 2px solid ${titleColor};">
-									ガスセンサー (空気質)
+								<h2 style="margin: 0; color: ${tCol}; border-bottom: 2px solid ${tCol};">
+									粉塵 (PM2.5)
 								</h2>
 								<div style="margin: 15px 0; text-align:center;">
-									<div style="font-size: 2.0em;"><b>${gasK} kΩ</b></div>
+									<div style="font-size: 2.0em;"><b>${pm} µg/m³</b></div>
 								</div>
 								<p style="text-align: center; margin: 0 0 15px 0;">
-									判定: <span style="font-weight:bold; color:${gasColor}; font-size:1.4em;">${gasJudge}</span>
+									判定: <span style="font-weight:bold; color:${pmColor}; font-size:1.4em;">${pmJudge}</span>
 								</p>
 								<p style="text-align: right; font-size: 0.8em; color: #ccc;">更新: ${timeStr}</p>
 							</div>
 						`;
 					} else {
-						a_gas.title = "ガス: --";
+						a_pm25.title = "PM2.5: --";
 					}
 
-				}).catch(e=>{ 
-					console.error(e);
-					a_ac.title="空調 (Err)";
-					a_pres.title="気圧 (Err)";
-					a_gas.title="ガス (Err)";
-				});
+				}).catch(e=>{ console.error(e); });
 			}
 
 			// ▼【96975】センサー側 (照度d5, CPUd6, CO2d2, 湿度d4)
 			function updateSensors() {
 				const url = "https://ambidata.io/api/v2/channels/96975/data?readKey=bd6e6cb69b42f331&n=20";
-				
 				fetch(url).then(res=>res.json()).then(data => {
 					data.sort((a, b) => new Date(a.created) - new Date(b.created));
 					const lastTime = data[data.length-1].created;
@@ -272,6 +286,7 @@
 			a_ac.domElement.addEventListener("click", () => { updateCameraData(); a_ac.setExpanded(true); });
 			a_pres.domElement.addEventListener("click", () => { updateCameraData(); a_pres.setExpanded(true); });
 			a_gas.domElement.addEventListener("click", () => { updateCameraData(); a_gas.setExpanded(true); });
+			a_pm25.domElement.addEventListener("click", () => { updateCameraData(); a_pm25.setExpanded(true); }); // NEW
 			
 			const sensorTags = [a_lux, a_cpu, a_co2, a_hum];
 			sensorTags.forEach(tag => {
