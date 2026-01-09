@@ -39,7 +39,7 @@
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("全センサー + 気圧 + ガス");
+		viewer.setDescription("全センサー完全版 (ガス判定付き)");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -58,7 +58,7 @@
 			scene.addPointCloud(pointcloud);
 			
 			// ==========================================
-			// 1. タグの設置
+			// 1. タグの設置 (計7個)
 			// ==========================================
 			
 			// (A) 空調
@@ -96,14 +96,14 @@
 			});
 			viewer.scene.annotations.add(a_co2);
 
-			// (F) 気圧 (5.99, 6.18, -0.22)
+			// (F) 気圧
 			let a_pres = new Potree.Annotation({
 				position: [5.99, 6.18, -0.22],
 				title: "気圧", description: "..."
 			});
 			viewer.scene.annotations.add(a_pres);
 
-			// (G) ガス (6.19, 6.90, -0.22) - NEW!
+			// (G) ガス
 			let a_gas = new Potree.Annotation({
 				position: [6.19, 6.90, -0.22],
 				title: "ガス", description: "..."
@@ -159,29 +159,38 @@
 						a_pres.title = "気圧: -- hPa";
 					}
 
-					// --- 3. ガス (d6) --- NEW!
+					// --- 3. ガス (d6) --- 判定ロジック追加
 					const rawGas = findValidValue(data, "d6");
 					if (rawGas !== null) {
-						// 抵抗値(Ω)をkΩに変換
-						const gasK = (Number(rawGas) / 1000).toFixed(1);
-						const gasColor = "#7f8c8d"; // グレー
+						const gasVal = Number(rawGas);
+						const gasK = (gasVal / 1000).toFixed(1); // kΩに変換
 						
-						// ガス抵抗値は高いほうがキレイ、低いほうが汚い
-						let gasStatus = "";
-						if (Number(rawGas) > 50000) {
-							gasStatus = "(きれい)";
+						// ガス判定 (抵抗値が高いほどきれい)
+						let gasJudge = "汚れている";
+						let gasColor = "#e74c3c"; // 赤
+
+						if (gasVal >= 50000) { // 50kΩ以上
+							gasJudge = "きれい";
+							gasColor = "#2ecc71"; // 緑
+						} else if (gasVal >= 10000) { // 10kΩ～50kΩ
+							gasJudge = "普通";
+							gasColor = "#f39c12"; // 黄
 						}
 
-						a_gas.title = `ガス: ${gasK} kΩ`;
+						const titleColor = "#95a5a6"; // グレー
+
+						a_gas.title = `ガス: ${gasK} kΩ (${gasJudge})`;
 						a_gas.description = `
 							<div style="color: white; font-size: 1.2em; min-width: 200px;">
-								<h2 style="margin: 0; color: ${gasColor}; border-bottom: 2px solid ${gasColor};">
-									ガスセンサー (抵抗値)
+								<h2 style="margin: 0; color: ${titleColor}; border-bottom: 2px solid ${titleColor};">
+									ガスセンサー (空気質)
 								</h2>
 								<div style="margin: 15px 0; text-align:center;">
 									<div style="font-size: 2.0em;"><b>${gasK} kΩ</b></div>
-									<div style="font-size: 0.9em; color:#ccc;">※数値が高いほど清浄</div>
 								</div>
+								<p style="text-align: center; margin: 0 0 15px 0;">
+									判定: <span style="font-weight:bold; color:${gasColor}; font-size:1.4em;">${gasJudge}</span>
+								</p>
 								<p style="text-align: right; font-size: 0.8em; color: #ccc;">更新: ${timeStr}</p>
 							</div>
 						`;
@@ -259,12 +268,11 @@
 			updateCameraData();
 			updateSensors();
 
-			// クリックイベント (カメラ系)
+			// クリックイベント
 			a_ac.domElement.addEventListener("click", () => { updateCameraData(); a_ac.setExpanded(true); });
 			a_pres.domElement.addEventListener("click", () => { updateCameraData(); a_pres.setExpanded(true); });
 			a_gas.domElement.addEventListener("click", () => { updateCameraData(); a_gas.setExpanded(true); });
 			
-			// クリックイベント (センサー系)
 			const sensorTags = [a_lux, a_cpu, a_co2, a_hum];
 			sensorTags.forEach(tag => {
 				tag.domElement.addEventListener("click", () => {
