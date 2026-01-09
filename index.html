@@ -39,7 +39,7 @@
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("空調と照度 (判定付き)");
+		viewer.setDescription("空調・照度・CPU温度");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -71,6 +71,12 @@
 				title: "照度", description: "..."
 			});
 			viewer.scene.annotations.add(a_lux);
+
+			let a_cpu = new Potree.Annotation({
+				position: [5.86, 2.04, 0.00], // 以前のコードのCPU位置
+				title: "CPU", description: "..."
+			});
+			viewer.scene.annotations.add(a_cpu);
 
 
 			// ==========================================
@@ -120,22 +126,18 @@
 							const luxVal = Number(latest.d5);
 							const time = new Date(latest.created).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
 							
-							// --- 判定ロジック (126lx付近＝適正) ---
+							// 判定ロジック (126lx付近＝適正)
 							let judgeText = "";
 							let judgeColor = "";
-
 							if (luxVal >= 200) {
-								judgeText = "明るい"; 
-								judgeColor = "#00b894"; // 緑
+								judgeText = "明るい"; judgeColor = "#00b894";
 							} else if (luxVal >= 80) {
-								judgeText = "適正"; // ★ここに126lxが含まれます
-								judgeColor = "#0984e3"; // 青
+								judgeText = "適正"; judgeColor = "#0984e3";
 							} else {
-								judgeText = "暗い"; 
-								judgeColor = "#d63031"; // 赤
+								judgeText = "暗い"; judgeColor = "#d63031";
 							}
 
-							const titleColor = "#f1c40f"; // 黄色
+							const titleColor = "#f1c40f";
 
 							a_lux.title = `照度: ${luxVal} lx (${judgeText})`;
 							a_lux.description = `
@@ -157,14 +159,62 @@
 					.catch(e => { a_lux.title = "照度 (Err)"; });
 			}
 
+			// ▼【96975】CPU温度データ (d6)
+			function updateCPU() {
+				const url = "https://ambidata.io/api/v2/channels/96975/data?readKey=bd6e6cb69b42f331&n=1";
+				fetch(url)
+					.then(res => res.json())
+					.then(data => {
+						if (data.length > 0) {
+							const latest = data[0];
+							const cpuTemp = Number(latest.d6);
+							const time = new Date(latest.created).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+							
+							// CPU温度の判定
+							let statusColor = "#2ecc71"; // 緑 (正常)
+							let statusText = "正常";
+
+							if (cpuTemp >= 75) {
+								statusColor = "#e74c3c"; // 赤 (危険)
+								statusText = "高温注意";
+							} else if (cpuTemp >= 60) {
+								statusColor = "#f39c12"; // 黄 (注意)
+								statusText = "やや熱い";
+							}
+
+							const titleColor = "#9b59b6"; // 紫
+
+							a_cpu.title = `CPU: ${cpuTemp} ℃`;
+							a_cpu.description = `
+								<div style="color: white; font-size: 1.2em; min-width: 200px;">
+									<h2 style="margin: 0; color: ${titleColor}; border-bottom: 2px solid ${titleColor};">
+										CPU 温度
+									</h2>
+									<p style="margin: 15px 0 5px 0; font-size: 2.0em; text-align:center;">
+										<b>${cpuTemp} ℃</b>
+									</p>
+									<p style="text-align: center; margin: 0 0 15px 0;">
+										状態: <span style="font-weight:bold; color:${statusColor};">${statusText}</span>
+									</p>
+									<p style="text-align: right; font-size: 0.8em; color: #ccc;">更新: ${time}</p>
+								</div>
+							`;
+						}
+					})
+					.catch(e => { a_cpu.title = "CPU (Err)"; });
+			}
+
 			// ==========================================
 			// 3. 実行
 			// ==========================================
 			updateAC();
 			updateLux();
+			updateCPU();
 
+			// クリックイベント
 			a_ac.domElement.addEventListener("click", () => { updateAC(); a_ac.setExpanded(true); });
 			a_lux.domElement.addEventListener("click", () => { updateLux(); a_lux.setExpanded(true); });
+			a_cpu.domElement.addEventListener("click", () => { updateCPU(); a_cpu.setExpanded(true); });
 
 			viewer.fitToScreen();
 		});
