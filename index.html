@@ -39,7 +39,7 @@
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("研究室デジタルツイン (自動更新:60秒)");
+		viewer.setDescription("データ重ね合わせ①: 換気推奨 (位置修正)");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -58,89 +58,52 @@
 			scene.addPointCloud(pointcloud);
 			
 			// ==========================================
-			// 1. タグの設置 (計9個)
+			// 1. 通常センサータグの設置 (計9個)
 			// ==========================================
-			
-			// (A) 空調
-			let a_ac = new Potree.Annotation({
-				position: [5.74, 1.52, 0.60],
-				title: "空調", description: "..."
-			});
+			let a_ac = new Potree.Annotation({ position: [5.74, 1.52, 0.60], title: "空調", description: "..." });
 			viewer.scene.annotations.add(a_ac);
-
-			// (B) 照度
-			let a_lux = new Potree.Annotation({
-				position: [2.77, 4.16, 1.61],
-				title: "照度", description: "..."
-			});
+			let a_lux = new Potree.Annotation({ position: [2.77, 4.16, 1.61], title: "照度", description: "..." });
 			viewer.scene.annotations.add(a_lux);
-
-			// (C) CPU
-			let a_cpu = new Potree.Annotation({
-				position: [5.86, 2.04, 0.00],
-				title: "CPU", description: "..."
-			});
+			let a_cpu = new Potree.Annotation({ position: [5.86, 2.04, 0.00], title: "CPU", description: "..." });
 			viewer.scene.annotations.add(a_cpu);
-
-			// (D) 湿度
-			let a_hum = new Potree.Annotation({
-				position: [3.60, 1.76, -0.16],
-				title: "湿度", description: "..."
-			});
+			let a_hum = new Potree.Annotation({ position: [3.60, 1.76, -0.16], title: "湿度", description: "..." });
 			viewer.scene.annotations.add(a_hum);
-
-			// (E) CO2
-			let a_co2 = new Potree.Annotation({
-				position: [5.77, 5.95, -0.22],
-				title: "CO2", description: "..."
-			});
+			let a_co2 = new Potree.Annotation({ position: [5.77, 5.95, -0.22], title: "CO2", description: "..." });
 			viewer.scene.annotations.add(a_co2);
-
-			// (F) 気圧
-			let a_pres = new Potree.Annotation({
-				position: [7.30, 7.66, -0.22],
-				title: "気圧", description: "..."
-			});
+			let a_pres = new Potree.Annotation({ position: [7.30, 7.66, -0.22], title: "気圧", description: "..." });
 			viewer.scene.annotations.add(a_pres);
-
-			// (G) ガス
-			let a_gas = new Potree.Annotation({
-				position: [6.19, 6.90, -0.22],
-				title: "ガス", description: "..."
-			});
+			let a_gas = new Potree.Annotation({ position: [6.19, 6.90, -0.22], title: "ガス", description: "..." });
 			viewer.scene.annotations.add(a_gas);
-
-			// (H) PM2.5
-			let a_pm25 = new Potree.Annotation({
-				position: [5.11, 5.56, -0.22],
-				title: "PM2.5", description: "..."
-			});
+			let a_pm25 = new Potree.Annotation({ position: [5.11, 5.56, -0.22], title: "PM2.5", description: "..." });
 			viewer.scene.annotations.add(a_pm25);
-			
-			// (I) ドア
-			let a_door = new Potree.Annotation({
-				position: [4.34, 1.22, 0.28], 
-				title: "ドア", description: "..."
-			});
+			let a_door = new Potree.Annotation({ position: [4.34, 1.22, 0.28], title: "ドア", description: "..." });
 			viewer.scene.annotations.add(a_door);
 
+			// ==========================================
+			// ★ データ重ね合わせ用タグ (Scenario 1)
+			// ==========================================
+			// CO2タグ(5.77, 5.95, -0.22)の少し上(z=0.5)に配置
+			let a_alert1 = new Potree.Annotation({
+				position: [5.77, 5.95, 0.50], 
+				title: "分析中...",
+				description: "CO2濃度とドア開閉状況を監視中"
+			});
+			viewer.scene.annotations.add(a_alert1);
+
 
 			// ==========================================
-			// 2. NaN対策ヘルパー関数
+			// 2. ヘルパー関数
 			// ==========================================
 			function findValidValue(dataArray, key) {
 				for (let i = dataArray.length - 1; i >= 0; i--) {
 					let val = dataArray[i][key];
-					if (val !== undefined && val !== null && val !== "") {
-						return val;
-					}
+					if (val !== undefined && val !== null && val !== "") return val;
 				}
 				return null;
 			}
-			
 			function findLastOpenTime(dataArray) {
 				for (let i = dataArray.length - 1; i >= 0; i--) {
-					if (dataArray[i].d1 == 1) { // 1=Open
+					if (dataArray[i].d1 == 1) { 
 						const t = new Date(dataArray[i].created);
 						return t.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 					}
@@ -149,18 +112,18 @@
 			}
 
 			// ==========================================
-			// 3. データ取得処理
+			// 3. データ取得 & ロジック処理
 			// ==========================================
 
-			// ▼【95062】カメラ側
+			// ▼ カメラ側 (95062)
 			function updateCameraData() {
-				const url = "https://ambidata.io/api/v2/channels/95062/data?readKey=167bbc984598399d&n=10";
+				const url = "https://ambidata.io/api/v2/channels/95062/data?readKey=167bbc984598399d&n=100";
 				fetch(url).then(res=>res.json()).then(data => {
 					data.sort((a, b) => new Date(a.created) - new Date(b.created));
-					const lastTime = data[data.length-1].created;
-					const timeStr = new Date(lastTime).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-					
-					// --- 空調 (d1-d3) ---
+					let lastTimeStr = "--:--";
+					if(data.length>0) lastTimeStr = new Date(data[data.length-1].created).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+
+					// --- 空調 ---
 					const d1 = findValidValue(data, "d1");
 					const d2 = findValidValue(data, "d2");
 					const d3 = findValidValue(data, "d3");
@@ -169,154 +132,141 @@
 					const camTemp = d3 || "--";
 					const acColor = isOn ? "#00ff00" : "#aaaaaa";
 					a_ac.title = isOn ? "🟢 空調: ON" : "⚫ 空調: OFF";
-					a_ac.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:${acColor}; border-bottom:2px solid ${acColor};">${isOn?"稼働中":"停止中"}</h2><p style="margin:10px 0;">設定: <b>${setTemp}℃</b><br>室温: <b>${camTemp}℃</b></p><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${timeStr}</p></div>`;
+					a_ac.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:${acColor}; border-bottom:2px solid ${acColor};">${isOn?"稼働中":"停止中"}</h2><p style="margin:10px 0;">設定: <b>${setTemp}℃</b><br>室温: <b>${camTemp}℃</b></p><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${lastTimeStr}</p></div>`;
 
-					// --- 気圧 (d5) ---
+					// --- 気圧, ガス, PM2.5 ---
 					const rawPres = findValidValue(data, "d5");
-					if (rawPres !== null) {
+					if (rawPres) {
 						const pres = Number(rawPres).toFixed(1);
-						const presColor = "#8e44ad";
 						a_pres.title = `気圧: ${pres} hPa`;
-						a_pres.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:${presColor}; border-bottom:2px solid ${presColor};">気圧 (BME680)</h2><div style="margin:15px 0; text-align:center;"><div style="font-size:2.0em;"><b>${pres} hPa</b></div></div><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${timeStr}</p></div>`;
-					} else { a_pres.title = "気圧: --"; }
-
-					// --- ガス (d6) ---
+						a_pres.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:#8e44ad; border-bottom:2px solid #8e44ad;">気圧</h2><div style="margin:15px 0; text-align:center;"><div style="font-size:2.0em;"><b>${pres} hPa</b></div></div><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${lastTimeStr}</p></div>`;
+					}
 					const rawGas = findValidValue(data, "d6");
-					if (rawGas !== null) {
-						const gasVal = Number(rawGas);
-						const gasK = (gasVal / 1000).toFixed(1);
-						let gasJudge = "汚れている", gasColor = "#e74c3c";
-						if (gasVal >= 50000) { gasJudge = "きれい"; gasColor = "#2ecc71"; }
-						else if (gasVal >= 10000) { gasJudge = "普通"; gasColor = "#f39c12"; }
-						const titleColor = "#95a5a6";
-						a_gas.title = `ガス: ${gasK} kΩ (${gasJudge})`;
-						a_gas.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:${titleColor}; border-bottom:2px solid ${titleColor};">ガスセンサー</h2><div style="margin:15px 0; text-align:center;"><div style="font-size:2.0em;"><b>${gasK} kΩ</b></div></div><p style="text-align:center; margin:0 0 15px 0;">判定: <span style="font-weight:bold; color:${gasColor}; font-size:1.4em;">${gasJudge}</span></p><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${timeStr}</p></div>`;
-					} else { a_gas.title = "ガス: --"; }
-
-					// --- PM2.5 (d7) ---
+					if (rawGas) {
+						const gasK = (Number(rawGas)/1000).toFixed(1);
+						let gJ="汚れている", gC="#e74c3c";
+						if(Number(rawGas)>=50000){gJ="きれい";gC="#2ecc71";} else if(Number(rawGas)>=10000){gJ="普通";gC="#f39c12";}
+						a_gas.title = `ガス: ${gasK} kΩ (${gJ})`;
+						a_gas.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:#95a5a6; border-bottom:2px solid #95a5a6;">ガス</h2><div style="margin:15px 0; text-align:center;"><div style="font-size:2.0em;"><b>${gasK} kΩ</b></div></div><p style="text-align:center;color:${gC};font-weight:bold;">${gJ}</p><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${lastTimeStr}</p></div>`;
+					}
 					const rawPm = findValidValue(data, "d7");
 					if (rawPm !== null) {
 						const pm = Number(rawPm);
-						let pmJudge = "多い", pmColor = "#e74c3c";
-						if (pm < 15) { pmJudge = "きれい"; pmColor = "#3498db"; }
-						else if (pm < 35) { pmJudge = "普通"; pmColor = "#2ecc71"; }
-						else { pmJudge = "注意"; pmColor = "#f1c40f"; }
-						const tCol = "#7f8c8d";
-						a_pm25.title = `PM2.5: ${pm} µg`;
-						a_pm25.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:${tCol}; border-bottom:2px solid ${tCol};">粉塵 (PM2.5)</h2><div style="margin:15px 0; text-align:center;"><div style="font-size:2.0em;"><b>${pm} µg/m³</b></div></div><p style="text-align:center; margin:0 0 15px 0;">判定: <span style="font-weight:bold; color:${pmColor}; font-size:1.4em;">${pmJudge}</span></p><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${timeStr}</p></div>`;
-					} else { a_pm25.title = "PM2.5: --"; }
-
-				}).catch(e=>{ console.error(e); });
+						let pmDisp = pm.toFixed(1);
+						let pmJ="多い", pmC="#e74c3c";
+						if(pm===0){ pmJ="0(要確認)"; pmC="#95a5a6"; }
+						else if(pm<15){ pmJ="きれい"; pmC="#3498db"; }
+						else if(pm<35){ pmJ="普通"; pmC="#2ecc71"; }
+						else{ pmJ="注意"; pmC="#f1c40f"; }
+						a_pm25.title = `PM2.5: ${pmDisp} µg`;
+						a_pm25.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:#7f8c8d; border-bottom:2px solid #7f8c8d;">PM2.5</h2><div style="margin:15px 0; text-align:center;"><div style="font-size:2.0em;"><b>${pmDisp} µg</b></div></div><p style="text-align:center;color:${pmC};font-weight:bold;">${pmJ}</p><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${lastTimeStr}</p></div>`;
+					}
+				}).catch(e=>{});
 			}
 
-			// ▼【96975】センサー側
+			// ▼ センサー側 (96975) & 重ね合わせロジック
 			function updateSensors() {
-				const url = "https://ambidata.io/api/v2/channels/96975/data?readKey=bd6e6cb69b42f331&n=50";
+				const url = "https://ambidata.io/api/v2/channels/96975/data?readKey=bd6e6cb69b42f331&n=100";
 				fetch(url).then(res=>res.json()).then(data => {
 					data.sort((a, b) => new Date(a.created) - new Date(b.created));
-					const lastTime = data[data.length-1].created;
-					const timeStr = new Date(lastTime).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+					let lastTimeStr = "--:--";
+					if(data.length>0) lastTimeStr = new Date(data[data.length-1].created).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 
-					// --- 1. ドア (d1) ---
 					const rawDoor = findValidValue(data, "d1");
-					const lastOpenTime = findLastOpenTime(data); 
-					let doorStatus = "不明";
-					let doorColor = "#aaaaaa";
-					
-					if (rawDoor !== null) {
-						if (rawDoor == 1) {
-							doorStatus = "OPEN"; doorColor = "#e74c3c";
-						} else {
-							doorStatus = "CLOSED"; doorColor = "#2ecc71";
-						}
-						let lastMsg = lastOpenTime ? `最終通過: ${lastOpenTime}` : "最近の通過なし";
-						
-						a_door.title = `ドア: ${doorStatus}`;
-						a_door.description = `
-							<div style="color: white; font-size: 1.2em; min-width: 220px;">
-								<h2 style="margin: 0; color: ${doorColor}; border-bottom: 2px solid ${doorColor};">
-									ドアモニター
-								</h2>
-								<div style="margin: 15px 0; text-align:center;">
-									<div style="font-size: 2.0em; font-weight:bold; color:${doorColor}">${doorStatus}</div>
-								</div>
-								<p style="text-align: center; margin: 0 0 15px 0; color: #fff;">${lastMsg}</p>
-								<p style="text-align: right; font-size: 0.8em; color: #ccc;">更新: ${timeStr}</p>
-							</div>
-						`;
-					} else { a_door.title = "ドア: --"; }
-
-					// --- 2. 照度(d5) ---
-					const rawLux = findValidValue(data, "d5");
-					if (rawLux !== null) {
-						const lux = Number(rawLux);
-						let judge="暗い", col="#d63031";
-						if(lux>=200){ judge="明るい"; col="#00b894"; }
-						else if(lux>=80){ judge="適正"; col="#0984e3"; }
-						const tCol = "#f1c40f";
-						a_lux.title = `照度: ${lux} lx (${judge})`;
-						a_lux.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:${tCol}; border-bottom:2px solid ${tCol};">照度</h2><p style="margin:15px 0 5px 0; font-size:2em; text-align:center;"><b>${lux} lx</b></p><p style="text-align:center; margin:0 0 15px 0;">判定: <span style="font-weight:bold; color:${col}; font-size:1.4em;">${judge}</span></p><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${timeStr}</p></div>`;
-					}
-
-					// --- 3. CPU(d6) ---
-					const rawCpu = findValidValue(data, "d6");
-					if (rawCpu !== null) {
-						const cpu = Number(rawCpu);
-						let st="正常", col="#2ecc71";
-						if(cpu>=75){ st="高温注意"; col="#e74c3c"; }
-						else if(cpu>=60){ st="やや熱い"; col="#f39c12"; }
-						const tCol = "#9b59b6";
-						a_cpu.title = `CPU: ${cpu} ℃`;
-						a_cpu.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:${tCol}; border-bottom:2px solid ${tCol};">CPU 温度</h2><p style="margin:15px 0 5px 0; font-size:2em; text-align:center;"><b>${cpu} ℃</b></p><p style="text-align:center; margin:0 0 15px 0;">状態: <span style="font-weight:bold; color:${col};">${st}</span></p><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${timeStr}</p></div>`;
-					}
-
-					// --- 4. CO2(d2) ---
 					const rawCo2 = findValidValue(data, "d2");
-					if (rawCo2 !== null) {
-						const co2 = Number(rawCo2);
-						let st="きれい", col="#2ecc71";
-						if(co2>=1500){ st="警告(換気)"; col="#e74c3c"; }
-						else if(co2>=1000){ st="注意"; col="#f39c12"; }
-						const tCol = "#2ecc71";
+					const rawLux = findValidValue(data, "d5");
+					const rawCpu = findValidValue(data, "d6");
+					const rawHum = findValidValue(data, "d4");
+
+					// 1. 各タグ更新 (省略なし)
+					let doorStatus="不明", isDoorClosed=false;
+					if(rawDoor!==null){
+						if(rawDoor==1){ doorStatus="OPEN"; } else { doorStatus="CLOSED"; isDoorClosed=true; }
+						let lt = findLastOpenTime(data) || "なし";
+						a_door.title = `ドア: ${doorStatus}`;
+						a_door.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:#aaaaaa; border-bottom:2px solid #aaaaaa;">ドア</h2><div style="margin:15px 0; text-align:center;"><div style="font-size:2.0em;"><b>${doorStatus}</b></div></div><p style="text-align:center;">最終: ${lt}</p><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${lastTimeStr}</p></div>`;
+					}
+					if(rawCo2!==null){
+						let co2 = Number(rawCo2);
+						let st="きれい", c="#2ecc71";
+						if(co2>=1500){st="警告";c="#e74c3c";} else if(co2>=1000){st="注意";c="#f39c12";}
 						a_co2.title = `CO2: ${co2} ppm`;
-						a_co2.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:${tCol}; border-bottom:2px solid ${tCol};">CO2 濃度</h2><p style="margin:15px 0 5px 0; font-size:2em; text-align:center;"><b>${co2} ppm</b></p><p style="text-align:center; margin:0 0 15px 0;">空気質: <span style="font-weight:bold; color:${col};">${st}</span></p><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${timeStr}</p></div>`;
+						a_co2.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:#2ecc71; border-bottom:2px solid #2ecc71;">CO2</h2><div style="margin:15px 0; text-align:center;"><div style="font-size:2.0em;"><b>${co2} ppm</b></div></div><p style="text-align:center;color:${c};">${st}</p><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${lastTimeStr}</p></div>`;
+					}
+					if(rawLux!==null) a_lux.title = `照度: ${Number(rawLux)} lx`;
+					if(rawCpu!==null) a_cpu.title = `CPU: ${Number(rawCpu)} ℃`;
+					if(rawHum!==null) a_hum.title = `湿度: ${rawHum} %`;
+
+					// ===============================================
+					// ★ 重ね合わせ判定ロジック (Scenario 1)
+					// ===============================================
+					if (rawCo2 !== null && rawDoor !== null) {
+						const co2Val = Number(rawCo2);
+						const isHighCo2 = (co2Val >= 1000);
+						
+						if (isHighCo2 && isDoorClosed) {
+							// 【警告状態】
+							a_alert1.title = "⚠️ 換気推奨！";
+							a_alert1.description = `
+								<div style="color: white; font-size: 1.3em; min-width: 250px; background-color:rgba(231, 76, 60, 0.2); padding:10px;">
+									<h2 style="margin: 0; color: #e74c3c; border-bottom: 3px solid #e74c3c;">
+										換気が必要です
+									</h2>
+									<p style="margin: 15px 0; text-align:center; font-weight:bold;">
+										空気が悪く、密閉されています
+									</p>
+									<ul style="text-align: left; font-size: 0.9em; color:#eee;">
+										<li>CO2濃度: <span style="color:#e74c3c; font-size:1.2em;">${co2Val} ppm</span> (基準超過)</li>
+										<li>ドア状態: <span style="color:#e74c3c; font-size:1.2em;">閉鎖中</span></li>
+									</ul>
+									<p style="text-align: center; color: #f1c40f; border: 1px solid #f1c40f; padding: 5px;">
+										ドアを開けて換気してください
+									</p>
+								</div>
+							`;
+						} else {
+							// 【正常状態】
+							let statusText = "空気質 良好";
+							let statusColor = "#2ecc71";
+							
+							if (isHighCo2 && !isDoorClosed) {
+								statusText = "換気中...";
+								statusColor = "#f1c40f"; 
+							}
+
+							a_alert1.title = `✅ ${statusText}`;
+							a_alert1.description = `
+								<div style="color: white; font-size: 1.2em; min-width: 200px;">
+									<h2 style="margin: 0; color: ${statusColor}; border-bottom: 2px solid ${statusColor};">
+										${statusText}
+									</h2>
+									<p style="margin: 10px 0;">監視中: CO2 & ドア</p>
+									<div style="font-size:0.8em; color:#ccc;">
+										現在: ${co2Val} ppm / ${isDoorClosed?"閉":"開"}
+									</div>
+								</div>
+							`;
+						}
 					}
 
-					// --- 5. 湿度(d4) ---
-					const hum = findValidValue(data, "d4");
-					if (hum !== null) {
-						const tCol = "#3498db";
-						a_hum.title = `湿度: ${hum}%`;
-						a_hum.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:${tCol}; border-bottom:2px solid ${tCol};">湿度</h2><div style="margin:15px 0; text-align:center;"><div style="font-size:2.0em;"><b>${hum} %</b></div></div><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${timeStr}</p></div>`;
-					}
-
-				}).catch(e=>{ console.error(e); });
+				}).catch(e=>{});
 			}
 
 			// ==========================================
-			// 4. 実行 & イベント登録 & 自動更新設定
+			// 4. 実行
 			// ==========================================
 			updateCameraData();
 			updateSensors();
-
-			a_ac.domElement.addEventListener("click", () => { updateCameraData(); a_ac.setExpanded(true); });
-			a_pres.domElement.addEventListener("click", () => { updateCameraData(); a_pres.setExpanded(true); });
-			a_gas.domElement.addEventListener("click", () => { updateCameraData(); a_gas.setExpanded(true); });
-			a_pm25.domElement.addEventListener("click", () => { updateCameraData(); a_pm25.setExpanded(true); });
+			setInterval(() => { updateCameraData(); updateSensors(); }, 60000);
 			
-			const sensorTags = [a_lux, a_cpu, a_co2, a_hum, a_door];
-			sensorTags.forEach(tag => {
+			const allTags = [a_ac, a_pres, a_gas, a_pm25, a_lux, a_cpu, a_co2, a_hum, a_door, a_alert1];
+			allTags.forEach(tag => {
 				tag.domElement.addEventListener("click", () => {
+					updateCameraData();
 					updateSensors();
 					tag.setExpanded(true);
 				});
 			});
-
-			// ★ここが自動更新の仕掛けです (60000ms = 60秒ごと)
-			setInterval(() => {
-				updateCameraData();
-				updateSensors();
-			}, 60000);
 
 			viewer.fitToScreen();
 		});
