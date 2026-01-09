@@ -39,7 +39,7 @@
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("Step 4: 照度判定 (ユーザー専用設定)");
+		viewer.setDescription("空調と照度 (判定付き)");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -109,7 +109,7 @@
 					.catch(e => { a_ac.title = "空調 (Err)"; });
 			}
 
-			// ▼【96975】照度データ (あなた専用基準)
+			// ▼【96975】照度データ (判定付き)
 			function updateLux() {
 				const url = "https://ambidata.io/api/v2/channels/96975/data?readKey=bd6e6cb69b42f331&n=1";
 				fetch(url)
@@ -120,8 +120,7 @@
 							const luxVal = Number(latest.d5);
 							const time = new Date(latest.created).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
 							
-							// --- ユーザー専用判定ロジック ---
-							// 126 lux 前後を「適正」とする設定
+							// --- 判定ロジック (126lx付近＝適正) ---
 							let judgeText = "";
 							let judgeColor = "";
 
@@ -129,20 +128,20 @@
 								judgeText = "明るい"; 
 								judgeColor = "#00b894"; // 緑
 							} else if (luxVal >= 80) {
-								judgeText = "適正"; // ★ここに126luxが含まれます
-								judgeColor = "#0984e3"; // ベストの青
+								judgeText = "適正"; // ★ここに126lxが含まれます
+								judgeColor = "#0984e3"; // 青
 							} else {
 								judgeText = "暗い"; 
 								judgeColor = "#d63031"; // 赤
 							}
 
-							const titleColor = "#f1c40f";
+							const titleColor = "#f1c40f"; // 黄色
 
 							a_lux.title = `照度: ${luxVal} lx (${judgeText})`;
 							a_lux.description = `
 								<div style="color: white; font-size: 1.2em; min-width: 220px;">
 									<h2 style="margin: 0; color: ${titleColor}; border-bottom: 2px solid ${titleColor};">
-										My環境チェッカー
+										照度
 									</h2>
 									<p style="margin: 15px 0 5px 0; font-size: 2.0em; text-align:center;">
 										<b>${luxVal} lx</b>
