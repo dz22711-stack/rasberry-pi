@@ -39,7 +39,7 @@
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("研究室デジタルツイン (完成版)");
+		viewer.setDescription("研究室デジタルツイン (自動更新:60秒)");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -117,7 +117,7 @@
 			});
 			viewer.scene.annotations.add(a_pm25);
 			
-			// (I) ドア (位置修正: 4.34, 1.22, 0.28)
+			// (I) ドア
 			let a_door = new Potree.Annotation({
 				position: [4.34, 1.22, 0.28], 
 				title: "ドア", description: "..."
@@ -138,7 +138,6 @@
 				return null;
 			}
 			
-			// 過去のデータから「最後に開いた(1になった)時刻」を探す関数
 			function findLastOpenTime(dataArray) {
 				for (let i = dataArray.length - 1; i >= 0; i--) {
 					if (dataArray[i].d1 == 1) { // 1=Open
@@ -153,7 +152,7 @@
 			// 3. データ取得処理
 			// ==========================================
 
-			// ▼【95062】カメラ側 (空調d1-3, 気圧d5, ガスd6, PM2.5 d7)
+			// ▼【95062】カメラ側
 			function updateCameraData() {
 				const url = "https://ambidata.io/api/v2/channels/95062/data?readKey=167bbc984598399d&n=10";
 				fetch(url).then(res=>res.json()).then(data => {
@@ -210,7 +209,7 @@
 				}).catch(e=>{ console.error(e); });
 			}
 
-			// ▼【96975】センサー側 (ドアd1, 照度d5, CPUd6, CO2d2, 湿度d4)
+			// ▼【96975】センサー側
 			function updateSensors() {
 				const url = "https://ambidata.io/api/v2/channels/96975/data?readKey=bd6e6cb69b42f331&n=50";
 				fetch(url).then(res=>res.json()).then(data => {
@@ -295,7 +294,7 @@
 			}
 
 			// ==========================================
-			// 4. 実行 & イベント登録
+			// 4. 実行 & イベント登録 & 自動更新設定
 			// ==========================================
 			updateCameraData();
 			updateSensors();
@@ -312,6 +311,12 @@
 					tag.setExpanded(true);
 				});
 			});
+
+			// ★ここが自動更新の仕掛けです (60000ms = 60秒ごと)
+			setInterval(() => {
+				updateCameraData();
+				updateSensors();
+			}, 60000);
 
 			viewer.fitToScreen();
 		});
