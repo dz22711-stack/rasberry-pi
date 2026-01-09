@@ -27,8 +27,6 @@
 	<script src="./libs/potree/potree.js"></script>
 	<script src="./libs/plasio/js/laslaz.js"></script>
 	
-	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-	
 	<div class="potree_container" style="position: absolute; width: 100%; height: 100%; left: 0px; top: 0px; ">
 		<div id="potree_render_area"></div>
 		<div id="potree_sidebar_container"></div>
@@ -41,7 +39,7 @@
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("Step1: 空調のみ表示");
+		viewer.setDescription("緊急復旧モード");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -60,85 +58,17 @@
 			scene.addPointCloud(pointcloud);
 			
 			// ==========================================
-			// 1. 空調のタグだけを作る
+			// シンプルなタグを1つだけ置く（通信なし）
 			// ==========================================
-			let a_ac = new Potree.Annotation({
+			let a = new Potree.Annotation({
 				position: [5.74, 1.52, 0.60],
-				title: "空調",
-				description: "データ取得中..."
+				title: "空調テスト",
+				description: "ここが表示されればOKです"
 			});
-			viewer.scene.annotations.add(a_ac);
+			viewer.scene.annotations.add(a);
 
-			// ==========================================
-			// 2. 空調データを取得してグラフ化する関数
-			// ==========================================
-			function updateAC() {
-				// 空調のデータ(Channel: 95062)を取得
-				const url = "https://ambidata.io/api/v2/channels/95062/data?readKey=167bbc984598399d&n=100";
-
-				fetch(url)
-					.then(res => res.json())
-					.then(data => {
-						// データを古い順に並び替え
-						data.sort((a, b) => new Date(a.created) - new Date(b.created));
-						
-						const latest = data[data.length - 1]; // 最新データ
-						const isOn = (latest.d1 == 1); // ONかOFFか
-						const statusColor = isOn ? "#00ff00" : "#aaaaaa";
-						
-						// タイトル更新
-						a_ac.title = isOn ? "🟢 空調: ON" : "⚫ 空調: OFF";
-
-						// 中身のHTML作成（ここにグラフを描くキャンバスを置く）
-						a_ac.description = `
-							<div style="width: 380px; color: white;">
-								<h2 style="border-bottom: 2px solid ${statusColor}; color: ${statusColor}; margin: 0;">
-									${isOn ? "稼働中" : "停止中"}
-								</h2>
-								<div style="font-size: 1.2em; margin: 10px 0;">
-									設定: <b>${latest.d2 || "--"}℃</b> / 室温: <b>${latest.d3}℃</b>
-								</div>
-								<div style="background: rgba(255,255,255,0.9); padding: 5px; border-radius: 5px;">
-									<canvas id="chartAC" width="360" height="200"></canvas>
-								</div>
-							</div>
-						`;
-
-						// グラフ用のデータを保存しておく
-						a_ac.graphInfo = {
-							labels: data.map(d => new Date(d.created).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})),
-							values: data.map(d => d.d3),
-							color: "255, 99, 132"
-						};
-					})
-					.catch(err => {
-						console.error(err);
-						a_ac.title = "空調 (エラー)";
-					});
-			}
-
-			// ==========================================
-			// 3. クリックした時の動作
-			// ==========================================
-			a_ac.domElement.addEventListener("click", () => {
-				a_ac.setExpanded(true);
-				
-				// 少し待ってからグラフを描画
-				setTimeout(() => {
-					const ctx = document.getElementById("chartAC");
-					const info = a_ac.graphInfo;
-
-					if (ctx && info) {
-						// 既存のグラフがあれば削除
-						let existing = Chart.getChart("chartAC");
-						if (existing) existing.destroy();
-
-						// グラフ描画
-						new Chart(ctx, {
-							type: 'line',
-							data: {
-								labels: info.labels,
-								datasets: [{
-									label: "室温 (℃)",
-									data: info.values,
-									borderColor: `rgba(${info.color
+			viewer.fitToScreen();
+		});
+	</script>
+</body>
+</html>
