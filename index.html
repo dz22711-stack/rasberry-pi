@@ -39,7 +39,7 @@
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("研究室デジタルツイン (ドア開閉履歴付き)");
+		viewer.setDescription("研究室デジタルツイン (完成版)");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -117,9 +117,9 @@
 			});
 			viewer.scene.annotations.add(a_pm25);
 			
-			// (I) ドア (NEW!) - 座標は仮置き
+			// (I) ドア (位置修正: 4.34, 1.22, 0.28)
 			let a_door = new Potree.Annotation({
-				position: [5.00, 1.00, 1.50], 
+				position: [4.34, 1.22, 0.28], 
 				title: "ドア", description: "..."
 			});
 			viewer.scene.annotations.add(a_door);
@@ -140,14 +140,13 @@
 			
 			// 過去のデータから「最後に開いた(1になった)時刻」を探す関数
 			function findLastOpenTime(dataArray) {
-				// 新しい順にチェック
 				for (let i = dataArray.length - 1; i >= 0; i--) {
 					if (dataArray[i].d1 == 1) { // 1=Open
 						const t = new Date(dataArray[i].created);
 						return t.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 					}
 				}
-				return null; // 見つからなければnull
+				return null;
 			}
 
 			// ==========================================
@@ -213,29 +212,24 @@
 
 			// ▼【96975】センサー側 (ドアd1, 照度d5, CPUd6, CO2d2, 湿度d4)
 			function updateSensors() {
-				// ドアの履歴を見たいので、少し多めにデータを取る(n=50)
 				const url = "https://ambidata.io/api/v2/channels/96975/data?readKey=bd6e6cb69b42f331&n=50";
 				fetch(url).then(res=>res.json()).then(data => {
 					data.sort((a, b) => new Date(a.created) - new Date(b.created));
 					const lastTime = data[data.length-1].created;
 					const timeStr = new Date(lastTime).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 
-					// --- 1. ドア (d1) --- NEW!
+					// --- 1. ドア (d1) ---
 					const rawDoor = findValidValue(data, "d1");
-					const lastOpenTime = findLastOpenTime(data); // 最後に開いた時間
-					
+					const lastOpenTime = findLastOpenTime(data); 
 					let doorStatus = "不明";
 					let doorColor = "#aaaaaa";
 					
 					if (rawDoor !== null) {
 						if (rawDoor == 1) {
-							doorStatus = "OPEN";
-							doorColor = "#e74c3c"; // 開いていれば赤（注意）
+							doorStatus = "OPEN"; doorColor = "#e74c3c";
 						} else {
-							doorStatus = "CLOSED";
-							doorColor = "#2ecc71"; // 閉まっていれば緑（安全）
+							doorStatus = "CLOSED"; doorColor = "#2ecc71";
 						}
-
 						let lastMsg = lastOpenTime ? `最終通過: ${lastOpenTime}` : "最近の通過なし";
 						
 						a_door.title = `ドア: ${doorStatus}`;
@@ -247,15 +241,11 @@
 								<div style="margin: 15px 0; text-align:center;">
 									<div style="font-size: 2.0em; font-weight:bold; color:${doorColor}">${doorStatus}</div>
 								</div>
-								<p style="text-align: center; margin: 0 0 15px 0; color: #fff;">
-									${lastMsg}
-								</p>
+								<p style="text-align: center; margin: 0 0 15px 0; color: #fff;">${lastMsg}</p>
 								<p style="text-align: right; font-size: 0.8em; color: #ccc;">更新: ${timeStr}</p>
 							</div>
 						`;
-					} else {
-						a_door.title = "ドア: --";
-					}
+					} else { a_door.title = "ドア: --"; }
 
 					// --- 2. 照度(d5) ---
 					const rawLux = findValidValue(data, "d5");
