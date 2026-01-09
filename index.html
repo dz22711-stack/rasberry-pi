@@ -41,7 +41,7 @@
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("研究室デジタルツイン (独立更新版)");
+		viewer.setDescription("Step1: 空調のみ表示");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -60,83 +60,85 @@
 			scene.addPointCloud(pointcloud);
 			
 			// ==========================================
-			// 1. タグを定義
+			// 1. 空調のタグだけを作る
 			// ==========================================
-			let a_ac  = new Potree.Annotation({ position: [5.74, 1.52, 0.60], title: "空調", description: "待機中..." });
-			let a_lux = new Potree.Annotation({ position: [2.77, 4.16, 1.61], title: "照度", description: "待機中..." });
-			let a_cpu = new Potree.Annotation({ position: [5.86, 2.04, 0.00], title: "CPU", description: "待機中..." });
-			let a_th  = new Potree.Annotation({ position: [3.60, 1.76, -0.16], title: "温湿度", description: "待機中..." });
-			let a_co2 = new Potree.Annotation({ position: [5.77, 5.95, -0.22], title: "CO2", description: "待機中..." });
-
+			let a_ac = new Potree.Annotation({
+				position: [5.74, 1.52, 0.60],
+				title: "空調",
+				description: "データ取得中..."
+			});
 			viewer.scene.annotations.add(a_ac);
-			viewer.scene.annotations.add(a_lux);
-			viewer.scene.annotations.add(a_cpu);
-			viewer.scene.annotations.add(a_th);
-			viewer.scene.annotations.add(a_co2);
-
-			// グローバル変数：環境センサーから取得した「正しい室温」を一時保存する場所
-			window.sharedRoomTemp = null; 
 
 			// ==========================================
-			// 2. 環境センサー更新 (96975)
+			// 2. 空調データを取得してグラフ化する関数
 			// ==========================================
-			function updateEnv() {
-				const url = "https://ambidata.io/api/v2/channels/96975/data?readKey=bd6e6cb69b42f331&n=100";
-				return fetch(url)
+			function updateAC() {
+				// 空調のデータ(Channel: 95062)を取得
+				const url = "https://ambidata.io/api/v2/channels/95062/data?readKey=167bbc984598399d&n=100";
+
+				fetch(url)
 					.then(res => res.json())
 					.then(data => {
-						// 古い順に並べる
+						// データを古い順に並び替え
 						data.sort((a, b) => new Date(a.created) - new Date(b.created));
-						const latest = data[data.length - 1];
-						const labels = data.map(d => fmtTime(d.created));
+						
+						const latest = data[data.length - 1]; // 最新データ
+						const isOn = (latest.d1 == 1); // ONかOFFか
+						const statusColor = isOn ? "#00ff00" : "#aaaaaa";
+						
+						// タイトル更新
+						a_ac.title = isOn ? "🟢 空調: ON" : "⚫ 空調: OFF";
 
-						// ★ここで「正しい室温(d3)」を保存しておく！
-						window.sharedRoomTemp = latest.d3;
+						// 中身のHTML作成（ここにグラフを描くキャンバスを置く）
+						a_ac.description = `
+							<div style="width: 380px; color: white;">
+								<h2 style="border-bottom: 2px solid ${statusColor}; color: ${statusColor}; margin: 0;">
+									${isOn ? "稼働中" : "停止中"}
+								</h2>
+								<div style="font-size: 1.2em; margin: 10px 0;">
+									設定: <b>${latest.d2 || "--"}℃</b> / 室温: <b>${latest.d3}℃</b>
+								</div>
+								<div style="background: rgba(255,255,255,0.9); padding: 5px; border-radius: 5px;">
+									<canvas id="chartAC" width="360" height="200"></canvas>
+								</div>
+							</div>
+						`;
 
-						// (B) 照度
-						a_lux.title = `照度: ${latest.d5} lx`;
-						a_lux.description = makeHtml("照度", `<b>${latest.d5} lx</b>`, "#f1c40f", "chartLux", latest.created);
-						a_lux.graphData = { labels: labels, values: data.map(d=>d.d5), label: "照度(lx)", color: "255, 206, 86" };
-
-						// (C) CPU
-						a_cpu.title = `CPU: ${latest.d6} ℃`;
-						a_cpu.description = makeHtml("CPU温度", `<b>${latest.d6} ℃</b>`, "#9b59b6", "chartCpu", latest.created);
-						a_cpu.graphData = { labels: labels, values: data.map(d=>d.d6), label: "CPU(℃)", color: "153, 102, 255" };
-
-						// (D) 温湿度
-						a_th.title = `${latest.d3}℃ / ${latest.d4}%`;
-						a_th.description = makeHtml("温湿度", `温度: <b>${latest.d3}℃</b> / 湿度: <b>${latest.d4}%</b>`, "#e74c3c", "chartTH", latest.created);
-						a_th.graphData = { labels: labels, values: data.map(d=>d.d3), label: "温度(℃)", color: "255, 99, 132" };
-
-						// (E) CO2
-						a_co2.title = `CO2: ${latest.d2} ppm`;
-						a_co2.description = makeHtml("CO2濃度", `<b>${latest.d2} ppm</b>`, "#2ecc71", "chartCO2", latest.created);
-						a_co2.graphData = { labels: labels, values: data.map(d=>d.d2), label: "CO2(ppm)", color: "75, 192, 192" };
+						// グラフ用のデータを保存しておく
+						a_ac.graphInfo = {
+							labels: data.map(d => new Date(d.created).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})),
+							values: data.map(d => d.d3),
+							color: "255, 99, 132"
+						};
 					})
-					.catch(e => {
-						console.error("Env Error:", e);
-						a_th.title = "Env (Err)";
+					.catch(err => {
+						console.error(err);
+						a_ac.title = "空調 (エラー)";
 					});
 			}
 
 			// ==========================================
-			// 3. 空調更新 (95062) 
+			// 3. クリックした時の動作
 			// ==========================================
-			function updateAC() {
-				const url = "https://ambidata.io/api/v2/channels/95062/data?readKey=167bbc984598399d&n=100";
-				fetch(url)
-					.then(res => res.json())
-					.then(data => {
-						data.sort((a, b) => new Date(a.created) - new Date(b.created));
-						const latest = data[data.length - 1];
+			a_ac.domElement.addEventListener("click", () => {
+				a_ac.setExpanded(true);
+				
+				// 少し待ってからグラフを描画
+				setTimeout(() => {
+					const ctx = document.getElementById("chartAC");
+					const info = a_ac.graphInfo;
 
-						const isOn = (latest.d1 == 1);
-						const setTemp = latest.d2 ? latest.d2 : "--";
-						
-						// ★ここで「保存しておいた正しい室温」を使う。無ければ自分のd3を使う。
-						const roomTemp = (window.sharedRoomTemp !== null) ? window.sharedRoomTemp : latest.d3;
-						const statusColor = isOn ? "#00ff00" : "#aaaaaa";
+					if (ctx && info) {
+						// 既存のグラフがあれば削除
+						let existing = Chart.getChart("chartAC");
+						if (existing) existing.destroy();
 
-						a_ac.title = isOn ? "🟢 空調: ON" : "⚫ 空調: OFF";
-						
-						a_ac.description = make
+						// グラフ描画
+						new Chart(ctx, {
+							type: 'line',
+							data: {
+								labels: info.labels,
+								datasets: [{
+									label: "室温 (℃)",
+									data: info.values,
+									borderColor: `rgba(${info.color
