@@ -39,7 +39,7 @@
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("全センサー (湿度のみ表示)");
+		viewer.setDescription("全センサー + 気圧 (New!)");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -58,7 +58,7 @@
 			scene.addPointCloud(pointcloud);
 			
 			// ==========================================
-			// 1. 全タグの設置
+			// 1. タグの設置
 			// ==========================================
 			
 			// (A) 空調
@@ -82,7 +82,7 @@
 			});
 			viewer.scene.annotations.add(a_cpu);
 
-			// (D) 湿度 (Temperature削除)
+			// (D) 湿度
 			let a_hum = new Potree.Annotation({
 				position: [3.60, 1.76, -0.16],
 				title: "湿度", description: "..."
@@ -95,6 +95,13 @@
 				title: "CO2", description: "..."
 			});
 			viewer.scene.annotations.add(a_co2);
+
+			// (F) 気圧 (NEW!) - 1つ目の座標
+			let a_pres = new Potree.Annotation({
+				position: [5.99, 6.18, -0.22],
+				title: "気圧", description: "..."
+			});
+			viewer.scene.annotations.add(a_pres);
 
 
 			// ==========================================
@@ -114,12 +121,15 @@
 			// 3. データ取得処理
 			// ==========================================
 
-			// ▼【95062】空調 (気温はこっちで表示)
-			function updateAC() {
+			// ▼【95062】カメラ側 (空調d1/d2/d3 + 気圧d5 + ガスd6)
+			function updateCameraData() {
 				const url = "https://ambidata.io/api/v2/channels/95062/data?readKey=167bbc984598399d&n=10";
 				fetch(url).then(res=>res.json()).then(data => {
 					data.sort((a, b) => new Date(a.created) - new Date(b.created));
+					const lastTime = data[data.length-1].created;
+					const timeStr = new Date(lastTime).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 					
+					// --- 空調 (d1, d2, d3) ---
 					const d1 = findValidValue(data, "d1");
 					const d2 = findValidValue(data, "d2");
 					const d3 = findValidValue(data, "d3");
@@ -127,17 +137,41 @@
 					const isOn = (d1 == 1);
 					const setTemp = d2 || "--";
 					const camTemp = d3 || "--";
-					const color = isOn ? "#00ff00" : "#aaaaaa";
-					const lastTime = data[data.length-1].created;
-					const time = new Date(lastTime).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+					const acColor = isOn ? "#00ff00" : "#aaaaaa";
 
 					a_ac.title = isOn ? "🟢 空調: ON" : "⚫ 空調: OFF";
-					a_ac.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:${color}; border-bottom:2px solid ${color};">${isOn?"稼働中":"停止中"}</h2><p style="margin:10px 0;">設定: <b>${setTemp}℃</b><br>室温: <b>${camTemp}℃</b></p><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${time}</p></div>`;
+					a_ac.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:${acColor}; border-bottom:2px solid ${acColor};">${isOn?"稼働中":"停止中"}</h2><p style="margin:10px 0;">設定: <b>${setTemp}℃</b><br>室温: <b>${camTemp}℃</b></p><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${timeStr}</p></div>`;
 
-				}).catch(e=>{ a_ac.title="空調 (Err)"; });
+					// --- 気圧 (d5) --- NEW!
+					const rawPres = findValidValue(data, "d5");
+					if (rawPres !== null) {
+						const pres = Number(rawPres).toFixed(1); // 小数点1桁まで
+						const presColor = "#8e44ad"; // 紫色
+						
+						a_pres.title = `気圧: ${pres} hPa`;
+						a_pres.description = `
+							<div style="color: white; font-size: 1.2em; min-width: 200px;">
+								<h2 style="margin: 0; color: ${presColor}; border-bottom: 2px solid ${presColor};">
+									気圧 (BME680)
+								</h2>
+								<div style="margin: 15px 0; text-align:center;">
+									<div style="font-size: 2.0em;"><b>${pres} hPa</b></div>
+								</div>
+								<p style="text-align: right; font-size: 0.8em; color: #ccc;">更新: ${timeStr}</p>
+							</div>
+						`;
+					} else {
+						a_pres.title = "気圧: -- hPa";
+					}
+
+				}).catch(e=>{ 
+					console.error(e);
+					a_ac.title="空調 (Err)";
+					a_pres.title="気圧 (Err)";
+				});
 			}
 
-			// ▼【96975】センサー系 (湿度のみ抽出)
+			// ▼【96975】センサー側 (照度d5, CPUd6, CO2d2, 湿度d4)
 			function updateSensors() {
 				const url = "https://ambidata.io/api/v2/channels/96975/data?readKey=bd6e6cb69b42f331&n=20";
 				
@@ -146,7 +180,7 @@
 					const lastTime = data[data.length-1].created;
 					const timeStr = new Date(lastTime).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 
-					// --- 1. 照度 (d5) ---
+					// 照度 (d5)
 					const rawLux = findValidValue(data, "d5");
 					if (rawLux !== null) {
 						const lux = Number(rawLux);
@@ -158,7 +192,7 @@
 						a_lux.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:${tCol}; border-bottom:2px solid ${tCol};">照度</h2><p style="margin:15px 0 5px 0; font-size:2em; text-align:center;"><b>${lux} lx</b></p><p style="text-align:center; margin:0 0 15px 0;">判定: <span style="font-weight:bold; color:${col}; font-size:1.4em;">${judge}</span></p><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${timeStr}</p></div>`;
 					}
 
-					// --- 2. CPU (d6) ---
+					// CPU (d6)
 					const rawCpu = findValidValue(data, "d6");
 					if (rawCpu !== null) {
 						const cpu = Number(rawCpu);
@@ -170,7 +204,7 @@
 						a_cpu.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:${tCol}; border-bottom:2px solid ${tCol};">CPU 温度</h2><p style="margin:15px 0 5px 0; font-size:2em; text-align:center;"><b>${cpu} ℃</b></p><p style="text-align:center; margin:0 0 15px 0;">状態: <span style="font-weight:bold; color:${col};">${st}</span></p><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${timeStr}</p></div>`;
 					}
 
-					// --- 3. CO2 (d2) ---
+					// CO2 (d2)
 					const rawCo2 = findValidValue(data, "d2");
 					if (rawCo2 !== null) {
 						const co2 = Number(rawCo2);
@@ -182,24 +216,12 @@
 						a_co2.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:${tCol}; border-bottom:2px solid ${tCol};">CO2 濃度</h2><p style="margin:15px 0 5px 0; font-size:2em; text-align:center;"><b>${co2} ppm</b></p><p style="text-align:center; margin:0 0 15px 0;">空気質: <span style="font-weight:bold; color:${col};">${st}</span></p><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${timeStr}</p></div>`;
 					}
 
-					// --- 4. 湿度 (d4のみ表示) ---
+					// 湿度 (d4)
 					const hum = findValidValue(data, "d4");
 					if (hum !== null) {
-						const tCol = "#3498db"; // 水色っぽい色
+						const tCol = "#3498db";
 						a_hum.title = `湿度: ${hum}%`;
-						a_hum.description = `
-							<div style="color: white; font-size: 1.2em; min-width: 200px;">
-								<h2 style="margin: 0; color: ${tCol}; border-bottom: 2px solid ${tCol};">
-									湿度
-								</h2>
-								<div style="margin: 15px 0; text-align:center;">
-									<div style="font-size: 2.0em;"><b>${hum} %</b></div>
-								</div>
-								<p style="text-align: right; font-size: 0.8em; color: #ccc;">更新: ${timeStr}</p>
-							</div>
-						`;
-					} else {
-						a_hum.title = "湿度: --%";
+						a_hum.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:${tCol}; border-bottom:2px solid ${tCol};">湿度</h2><div style="margin:15px 0; text-align:center;"><div style="font-size:2.0em;"><b>${hum} %</b></div></div><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${timeStr}</p></div>`;
 					}
 
 				}).catch(e=>{ console.error(e); });
@@ -208,11 +230,14 @@
 			// ==========================================
 			// 4. 実行 & イベント登録
 			// ==========================================
-			updateAC();
-			updateSensors();
+			updateCameraData(); // 空調＋気圧
+			updateSensors();    // その他
 
-			a_ac.domElement.addEventListener("click", () => { updateAC(); a_ac.setExpanded(true); });
+			// クリックイベント (カメラ系)
+			a_ac.domElement.addEventListener("click", () => { updateCameraData(); a_ac.setExpanded(true); });
+			a_pres.domElement.addEventListener("click", () => { updateCameraData(); a_pres.setExpanded(true); });
 			
+			// クリックイベント (センサー系)
 			const sensorTags = [a_lux, a_cpu, a_co2, a_hum];
 			sensorTags.forEach(tag => {
 				tag.domElement.addEventListener("click", () => {
