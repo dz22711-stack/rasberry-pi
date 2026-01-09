@@ -13,6 +13,12 @@
 </head>
 
 <body>
+	<script>
+		window.onerror = function(message, source, lineno, colno, error) {
+			alert("【エラー発生】\n" + message + "\n行番号: " + lineno);
+		};
+	</script>
+
 	<script src="./libs/jquery/jquery-3.1.1.min.js"></script>
 	<script src="./libs/spectrum/spectrum.js"></script>
 	<script src="./libs/jquery-ui/jquery-ui.min.js"></script>
@@ -27,19 +33,22 @@
 	<script src="./libs/potree/potree.js"></script>
 	<script src="./libs/plasio/js/laslaz.js"></script>
 	
+	<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+	
 	<div class="potree_container" style="position: absolute; width: 100%; height: 100%; left: 0px; top: 0px; ">
 		<div id="potree_render_area"></div>
 		<div id="potree_sidebar_container"></div>
 	</div>
 
 	<script>
+		// ビューワー作成
 		window.viewer = new Potree.Viewer(document.getElementById("potree_render_area"));
 		
 		viewer.setEDLEnabled(true);
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("緊急復旧モード");
+		viewer.setDescription("Step1: 空調のみ (診断モード)");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -47,6 +56,7 @@
 			viewer.toggleSidebar();
 		});
 		
+		// 点群読み込み
 		Potree.loadPointCloud("./pointclouds/index/cloud.js", "index", e => {
 			let scene = viewer.scene;
 			let pointcloud = e.pointcloud;
@@ -57,16 +67,87 @@
 			material.shape = Potree.PointShape.SQUARE;
 			scene.addPointCloud(pointcloud);
 			
-			// ==========================================
-			// シンプルなタグを1つだけ置く（通信なし）
-			// ==========================================
-			let a = new Potree.Annotation({
+			// === 空調タグ作成 ===
+			let a_ac = new Potree.Annotation({
 				position: [5.74, 1.52, 0.60],
-				title: "空調テスト",
-				description: "ここが表示されればOKです"
+				title: "空調",
+				description: "データ取得中..."
 			});
-			viewer.scene.annotations.add(a);
+			viewer.scene.annotations.add(a_ac);
 
+			// === データ取得＆グラフ化 ===
+			function updateAC() {
+				// Ambientからデータ取得 (95062)
+				const url = "https://ambidata.io/api/v2/channels/95062/data?readKey=167bbc984598399d&n=100";
+				
+				fetch(url)
+					.then(res => res.json())
+					.then(data => {
+						data.sort((a, b) => new Date(a.created) - new Date(b.created));
+						const latest = data[data.length - 1];
+						const isOn = (latest.d1 == 1);
+						const statusColor = isOn ? "#00ff00" : "#aaaaaa";
+
+						a_ac.title = isOn ? "🟢 空調: ON" : "⚫ 空調: OFF";
+
+						// HTML作成
+						a_ac.description = `
+							<div style="width: 380px; color: white;">
+								<h2 style="border-bottom: 2px solid ${statusColor}; color: ${statusColor}; margin: 0;">
+									${isOn ? "稼働中" : "停止中"}
+								</h2>
+								<div style="font-size: 1.2em; margin: 10px 0;">
+									設定: <b>${latest.d2 || "--"}℃</b> / 室温: <b>${latest.d3}℃</b>
+								</div>
+								<div style="background: rgba(255,255,255,0.9); padding: 5px; border-radius: 5px;">
+									<canvas id="chartAC" width="360" height="200"></canvas>
+								</div>
+							</div>
+						`;
+						
+						// グラフデータ保存
+						a_ac.graphInfo = {
+							labels: data.map(d => new Date(d.created).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})),
+							values: data.map(d => d.d3),
+							color: "255, 99, 132"
+						};
+					})
+					.catch(err => {
+						alert("通信エラー: " + err);
+					});
+			}
+
+			// === クリックイベント ===
+			a_ac.domElement.addEventListener("click", () => {
+				a_ac.setExpanded(true);
+				setTimeout(() => {
+					const ctx = document.getElementById("chartAC");
+					const info = a_ac.graphInfo;
+					if (ctx && info) {
+						let existing = Chart.getChart("chartAC");
+						if (existing) existing.destroy();
+						new Chart(ctx, {
+							type: 'line',
+							data: {
+								labels: info.labels,
+								datasets: [{
+									label: "室温 (℃)",
+									data: info.values,
+									borderColor: `rgba(${info.color}, 1)`,
+									backgroundColor: `rgba(${info.color}, 0.2)`,
+									borderWidth: 2, fill: true
+								}]
+							},
+							options: { responsive: false, scales: { y: { beginAtZero: false }, x: { display: false } } }
+						});
+					}
+				}, 300);
+				updateAC();
+			});
+
+			// 初回実行
+			updateAC();
+			
 			viewer.fitToScreen();
 		});
 	</script>
