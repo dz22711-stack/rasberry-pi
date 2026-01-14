@@ -39,7 +39,7 @@
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("エネルギー管理: 位置修正版");
+		viewer.setDescription("統合分析: 換気・消し忘れ・ロス・快適性");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -96,13 +96,17 @@
 			let a_alert2 = new Potree.Annotation({ position: [2.77, 4.16, 2.00], title: "分析中...", description: "..." });
 			viewer.scene.annotations.add(a_alert2);
 
-			// Alert 3: エネルギー無駄使い (★位置修正: 5.87, 7.79, 1.59)
-			let a_alert3 = new Potree.Annotation({ 
-				position: [5.87, 7.79, 1.59], 
+			// Alert 3: エネルギー無駄使い
+			let a_alert3 = new Potree.Annotation({ position: [5.87, 7.79, 1.59], title: "分析中...", description: "..." });
+			viewer.scene.annotations.add(a_alert3);
+
+			// Alert 4: 快適性/不快指数 (NEW! 4.11, 1.33, 1.40)
+			let a_alert4 = new Potree.Annotation({ 
+				position: [4.11, 1.33, 1.40], 
 				title: "分析中...", 
 				description: "..." 
 			});
-			viewer.scene.annotations.add(a_alert3);
+			viewer.scene.annotations.add(a_alert4);
 
 
 			// ==========================================
@@ -111,8 +115,8 @@
 			let G_Data = {
 				co2: null, door: null, lux: null, hour: null, 
 				co2_out: null, temp_out: null, 
-				acOn: null, roomTemp: null,
-				isDoorLongOpen: false // 5分以上開いているかフラグ
+				acOn: null, roomTemp: null, hum: null, // humを追加
+				isDoorLongOpen: false 
 			};
 
 			// ==========================================
@@ -134,6 +138,10 @@
 				}
 				return null;
 			}
+			// 不快指数計算 (0.81T + 0.01H(0.99T - 14.3) + 46.3)
+			function calcDI(temp, hum) {
+				return 0.81 * temp + 0.01 * hum * (0.99 * temp - 14.3) + 46.3;
+			}
 
 			// ==========================================
 			// 4. 分析ロジック
@@ -141,7 +149,7 @@
 			function runAnalysis() {
 				if (G_Data.hour === null) return;
 
-				// --- 分析1: 換気推奨 (CO2>=1000 & Door=Closed) ---
+				// --- 分析1: 換気推奨 ---
 				if (G_Data.co2 !== null && G_Data.door !== null) {
 					if (G_Data.co2 >= 1000 && G_Data.door == 0) {
 						a_alert1.title = "⚠️ 換気推奨！";
@@ -154,13 +162,12 @@
 					}
 				}
 
-				// --- 分析2: 照明消し忘れ (夜間 & 点灯 & 不在) ---
+				// --- 分析2: 照明消し忘れ ---
 				if (G_Data.co2 !== null && G_Data.lux !== null && G_Data.co2_out !== null) {
 					const isNight = (G_Data.hour >= 0 && G_Data.hour < 6);
 					const isLightOn = (G_Data.lux >= 35);
 					const diff = G_Data.co2 - G_Data.co2_out;
 					const isEmpty = (diff < 50); 
-
 					if (isNight && isEmpty && isLightOn) {
 						a_alert2.title = "⚠️ 照明消し忘れ？";
 						a_alert2.description = `<div style="color:white;font-size:1.2em;min-width:250px;background-color:rgba(241,196,15,0.2);padding:10px;"><h2 style="margin:0;color:#f1c40f;border-bottom:3px solid #f1c40f;">消し忘れ警告</h2><p style="margin:10px 0;">無人ですが点灯中です</p></div>`;
@@ -176,55 +183,76 @@
 
 				// --- 分析3: エネルギー無駄使い ---
 				if (G_Data.acOn !== null && G_Data.roomTemp !== null) {
-					const isAcOn = G_Data.acOn;
-					
-					if (isAcOn) {
-						// エアコンがついている時
+					if (G_Data.acOn) {
 						if (G_Data.isDoorLongOpen) {
-							// パターンA: ドアが5分以上開いている
 							a_alert3.title = "⚠️ ドア開放(空調ロス)";
-							a_alert3.description = `
-								<div style="color:white;font-size:1.2em;min-width:250px;background-color:rgba(231,76,60,0.2);padding:10px;">
-									<h2 style="margin:0;color:#e74c3c;border-bottom:3px solid #e74c3c;">エネルギー浪費警告</h2>
-									<p style="margin:15px 0;text-align:center;font-weight:bold;">エアコン稼働中にドアが開いています</p>
-									<ul style="text-align:left;font-size:0.9em;color:#eee;">
-										<li>状態: 5分以上開放</li>
-										<li>室温: ${G_Data.roomTemp} ℃</li>
-									</ul>
-									<p style="text-align:center;color:#fff;border:1px solid #fff;padding:5px;">ドアを閉めてください</p>
-								</div>`;
+							a_alert3.description = `<div style="color:white;font-size:1.2em;min-width:250px;background-color:rgba(231,76,60,0.2);padding:10px;"><h2 style="margin:0;color:#e74c3c;border-bottom:3px solid #e74c3c;">浪費警告</h2><p style="margin:10px 0;">エアコン稼働中にドア開放(5分〜)</p></div>`;
 						} 
 						else if (G_Data.roomTemp < 18 || G_Data.roomTemp > 28) {
-							// パターンB: 室温が適正外
 							a_alert3.title = "⚠️ 室温異常(窓開放?)";
-							a_alert3.description = `
-								<div style="color:white;font-size:1.2em;min-width:250px;background-color:rgba(230,126,34,0.2);padding:10px;">
-									<h2 style="margin:0;color:#e67e22;border-bottom:3px solid #e67e22;">空調効率低下</h2>
-									<p style="margin:15px 0;text-align:center;font-weight:bold;">エアコンが効いていません</p>
-									<ul style="text-align:left;font-size:0.9em;color:#eee;">
-										<li>室温: ${G_Data.roomTemp} ℃ (適正外)</li>
-										<li>原因: 窓の開放、故障など</li>
-									</ul>
-									<p style="text-align:center;color:#fff;border:1px solid #fff;padding:5px;">窓の確認・点検を推奨</p>
-								</div>`;
+							a_alert3.description = `<div style="color:white;font-size:1.2em;min-width:250px;background-color:rgba(230,126,34,0.2);padding:10px;"><h2 style="margin:0;color:#e67e22;border-bottom:3px solid #e67e22;">効率低下</h2><p style="margin:10px 0;">室温が適正範囲外です(${G_Data.roomTemp}℃)</p></div>`;
 						} else {
-							// 正常
 							a_alert3.title = "✅ 省エネ運転中";
-							a_alert3.description = `
+							a_alert3.description = `<div style="color:white;font-size:1.2em;min-width:200px;"><h2 style="margin:0;color:#2ecc71;border-bottom:2px solid #2ecc71;">省エネ運転中</h2><p>エネルギー管理</p></div>`;
+						}
+					} else {
+						a_alert3.title = "✅ 空調停止中";
+						a_alert3.description = `<div style="color:white;font-size:1.2em;min-width:200px;"><h2 style="margin:0;color:#95a5a6;border-bottom:2px solid #95a5a6;">空調停止中</h2><p>ロスなし</p></div>`;
+					}
+				}
+
+				// --- 分析4: 快適性/不快指数 (NEW!) ---
+				if (G_Data.acOn !== null && G_Data.roomTemp !== null && G_Data.hum !== null) {
+					if (G_Data.acOn) {
+						const di = calcDI(G_Data.roomTemp, G_Data.hum);
+						const diVal = di.toFixed(1);
+
+						if (di >= 75) {
+							// 不快
+							if (G_Data.hum >= 60) {
+								// 原因は湿度
+								a_alert4.title = "⚠️ 蒸し暑い(除湿推奨)";
+								a_alert4.description = `
+									<div style="color:white;font-size:1.2em;min-width:250px;background-color:rgba(52, 152, 219, 0.3);padding:10px;">
+										<h2 style="margin:0;color:#3498db;border-bottom:3px solid #3498db;">除湿に切り替えて!</h2>
+										<p style="margin:15px 0;text-align:center;font-weight:bold;">温度ではなく湿度が原因です</p>
+										<ul style="text-align:left;font-size:0.9em;color:#eee;">
+											<li>不快指数: ${diVal} (不快)</li>
+											<li>湿度: ${G_Data.hum}% (高い)</li>
+											<li>室温: ${G_Data.roomTemp}℃</li>
+										</ul>
+										<p style="text-align:center;color:#fff;border:1px solid #fff;padding:5px;">ドライ運転を推奨</p>
+									</div>`;
+							} else {
+								// 原因は温度
+								a_alert4.title = "⚠️ 暑い(設定下げて)";
+								a_alert4.description = `
+									<div style="color:white;font-size:1.2em;min-width:250px;background-color:rgba(231, 76, 60, 0.2);padding:10px;">
+										<h2 style="margin:0;color:#e74c3c;border-bottom:3px solid #e74c3c;">設定温度を下げて</h2>
+										<p style="margin:15px 0;text-align:center;font-weight:bold;">室温が高く不快です</p>
+										<ul style="text-align:left;font-size:0.9em;color:#eee;">
+											<li>不快指数: ${diVal} (不快)</li>
+											<li>室温: ${G_Data.roomTemp}℃</li>
+										</ul>
+									</div>`;
+							}
+						} else {
+							// 快適
+							a_alert4.title = `✅ 快適 (DI:${diVal})`;
+							a_alert4.description = `
 								<div style="color:white;font-size:1.2em;min-width:200px;">
-									<h2 style="margin:0;color:#2ecc71;border-bottom:2px solid #2ecc71;">省エネ運転中</h2>
-									<p style="margin:10px 0;">空調エネルギー管理</p>
-									<div style="font-size:0.8em;color:#ccc;">室温: ${G_Data.roomTemp}℃ (適正)</div>
+									<h2 style="margin:0;color:#2ecc71;border-bottom:2px solid #2ecc71;">快適な環境</h2>
+									<p style="margin:10px 0;">空調バランス良好</p>
+									<div style="font-size:0.8em;color:#ccc;">
+										不快指数: ${diVal}<br>湿度: ${G_Data.hum}%
+									</div>
 								</div>`;
 						}
 					} else {
-						// エアコンOFF
-						a_alert3.title = "✅ 空調停止中";
-						a_alert3.description = `
-							<div style="color:white;font-size:1.2em;min-width:200px;">
-								<h2 style="margin:0;color:#95a5a6;border-bottom:2px solid #95a5a6;">空調停止中</h2>
-								<p>エネルギーロスはありません</p>
-							</div>`;
+						// AC OFF時
+						const di = calcDI(G_Data.roomTemp, G_Data.hum).toFixed(1);
+						a_alert4.title = `AC停止中 (DI:${di})`;
+						a_alert4.description = `<div style="color:white;font-size:1.2em;min-width:200px;"><h2 style="margin:0;color:#95a5a6;border-bottom:2px solid #95a5a6;">AC停止中</h2><p>現在の不快指数: ${di}</p></div>`;
 					}
 				}
 			}
@@ -321,6 +349,7 @@
 					if(rawDoor!==null) G_Data.door = Number(rawDoor);
 					if(rawCo2!==null) G_Data.co2 = Number(rawCo2);
 					if(rawLux!==null) G_Data.lux = Number(rawLux);
+					if(rawHum!==null) G_Data.hum = Number(rawHum); // ★Hum保存
 					if(rawCo2Out!==null) G_Data.co2_out = Number(rawCo2Out);
 					if(rawTempOut!==null) G_Data.temp_out = Number(rawTempOut);
 
@@ -380,7 +409,7 @@
 			updateSensors();
 			setInterval(() => { updateCameraData(); updateSensors(); }, 60000);
 			
-			const allTags = [a_ac, a_pres, a_gas, a_pm25, a_lux, a_cpu, a_co2, a_hum, a_door, a_co2_out, a_temp_out, a_alert1, a_alert2, a_alert3];
+			const allTags = [a_ac, a_pres, a_gas, a_pm25, a_lux, a_cpu, a_co2, a_hum, a_door, a_co2_out, a_temp_out, a_alert1, a_alert2, a_alert3, a_alert4];
 			allTags.forEach(tag => {
 				tag.domElement.addEventListener("click", () => {
 					updateCameraData();
