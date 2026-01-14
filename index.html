@@ -39,7 +39,7 @@
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("消し忘れ判定: 在室中表記へ変更");
+		viewer.setDescription("エネルギー管理: 位置修正版");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -88,18 +88,31 @@
 			// ==========================================
 			// ★ 分析用タグ
 			// ==========================================
+			// Alert 1: 換気推奨
 			let a_alert1 = new Potree.Annotation({ position: [5.77, 5.95, 0.50], title: "分析中...", description: "..." });
 			viewer.scene.annotations.add(a_alert1);
 			
+			// Alert 2: 照明消し忘れ
 			let a_alert2 = new Potree.Annotation({ position: [2.77, 4.16, 2.00], title: "分析中...", description: "..." });
 			viewer.scene.annotations.add(a_alert2);
+
+			// Alert 3: エネルギー無駄使い (★位置修正: 5.87, 7.79, 1.59)
+			let a_alert3 = new Potree.Annotation({ 
+				position: [5.87, 7.79, 1.59], 
+				title: "分析中...", 
+				description: "..." 
+			});
+			viewer.scene.annotations.add(a_alert3);
 
 
 			// ==========================================
 			// 2. 変数管理
 			// ==========================================
 			let G_Data = {
-				co2: null, door: null, lux: null, hour: null, co2_out: null, temp_out: null
+				co2: null, door: null, lux: null, hour: null, 
+				co2_out: null, temp_out: null, 
+				acOn: null, roomTemp: null,
+				isDoorLongOpen: false // 5分以上開いているかフラグ
 			};
 
 			// ==========================================
@@ -123,12 +136,12 @@
 			}
 
 			// ==========================================
-			// 4. 分析ロジック実行関数
+			// 4. 分析ロジック
 			// ==========================================
 			function runAnalysis() {
 				if (G_Data.hour === null) return;
 
-				// --- 分析1: 換気推奨 (CO2 >= 1000 & Door=Closed) ---
+				// --- 分析1: 換気推奨 (CO2>=1000 & Door=Closed) ---
 				if (G_Data.co2 !== null && G_Data.door !== null) {
 					if (G_Data.co2 >= 1000 && G_Data.door == 0) {
 						a_alert1.title = "⚠️ 換気推奨！";
@@ -141,48 +154,76 @@
 					}
 				}
 
-				// --- 分析2: 照明消し忘れ (外気CO2連動型) ---
-				// 条件: 夜間(0-6時) & 点灯(>=35lx) & (室内CO2 < 外気CO2 + 50)
+				// --- 分析2: 照明消し忘れ (夜間 & 点灯 & 不在) ---
 				if (G_Data.co2 !== null && G_Data.lux !== null && G_Data.co2_out !== null) {
 					const isNight = (G_Data.hour >= 0 && G_Data.hour < 6);
 					const isLightOn = (G_Data.lux >= 35);
-					
 					const diff = G_Data.co2 - G_Data.co2_out;
 					const isEmpty = (diff < 50); 
 
 					if (isNight && isEmpty && isLightOn) {
-						// 誰もいないのに点灯
 						a_alert2.title = "⚠️ 照明消し忘れ？";
-						a_alert2.description = `
-							<div style="color:white;font-size:1.2em;min-width:250px;background-color:rgba(241,196,15,0.2);padding:10px;">
-								<h2 style="margin:0;color:#f1c40f;border-bottom:3px solid #f1c40f;">消し忘れ警告</h2>
-								<p style="margin:10px 0; font-weight:bold;">無人ですが点灯中です</p>
-								<ul style="text-align:left;font-size:0.9em;color:#eee;">
-									<li>時刻: ${G_Data.hour}時</li>
-									<li>照度: ${G_Data.lux} lx (点灯)</li>
-									<li>室内CO2: ${G_Data.co2} ppm</li>
-									<li>外気CO2: ${G_Data.co2_out} ppm</li>
-									<li>差分: ${diff} ppm (不在判定)</li>
-								</ul>
-							</div>`;
+						a_alert2.description = `<div style="color:white;font-size:1.2em;min-width:250px;background-color:rgba(241,196,15,0.2);padding:10px;"><h2 style="margin:0;color:#f1c40f;border-bottom:3px solid #f1c40f;">消し忘れ警告</h2><p style="margin:10px 0;">無人ですが点灯中です</p></div>`;
 					} else {
-						// 正常または在室中
-						let st="照明 OK", cl="#2ecc71", reason="正常";
-						
-						if(!isNight) { st="監視対象外(昼)"; cl="#95a5a6"; reason="昼間"; }
-						// ★ここを変更: "残業中" -> "在室中"
-						else if(isNight && !isEmpty) { st="在室中"; cl="#3498db"; reason="在室検知(CO2差分あり)"; }
-						else if(isNight && isEmpty && !isLightOn) { st="消灯確認済"; cl="#2ecc71"; reason="無人・消灯よし"; }
-
+						let st="照明 OK", cl="#2ecc71", r="正常";
+						if(!isNight) { st="監視対象外(昼)"; cl="#95a5a6"; }
+						else if(isNight && !isEmpty) { st="在室中"; cl="#3498db"; r="在室検知"; }
+						else if(isNight && isEmpty && !isLightOn) { st="消灯確認済"; cl="#2ecc71"; r="無人・消灯よし"; }
 						a_alert2.title = `✅ ${st}`;
-						a_alert2.description = `
+						a_alert2.description = `<div style="color:white;font-size:1.2em;min-width:200px;"><h2 style="margin:0;color:${cl};border-bottom:2px solid ${cl};">${st}</h2><p>${r}</p></div>`;
+					}
+				}
+
+				// --- 分析3: エネルギー無駄使い ---
+				if (G_Data.acOn !== null && G_Data.roomTemp !== null) {
+					const isAcOn = G_Data.acOn;
+					
+					if (isAcOn) {
+						// エアコンがついている時
+						if (G_Data.isDoorLongOpen) {
+							// パターンA: ドアが5分以上開いている
+							a_alert3.title = "⚠️ ドア開放(空調ロス)";
+							a_alert3.description = `
+								<div style="color:white;font-size:1.2em;min-width:250px;background-color:rgba(231,76,60,0.2);padding:10px;">
+									<h2 style="margin:0;color:#e74c3c;border-bottom:3px solid #e74c3c;">エネルギー浪費警告</h2>
+									<p style="margin:15px 0;text-align:center;font-weight:bold;">エアコン稼働中にドアが開いています</p>
+									<ul style="text-align:left;font-size:0.9em;color:#eee;">
+										<li>状態: 5分以上開放</li>
+										<li>室温: ${G_Data.roomTemp} ℃</li>
+									</ul>
+									<p style="text-align:center;color:#fff;border:1px solid #fff;padding:5px;">ドアを閉めてください</p>
+								</div>`;
+						} 
+						else if (G_Data.roomTemp < 18 || G_Data.roomTemp > 28) {
+							// パターンB: 室温が適正外
+							a_alert3.title = "⚠️ 室温異常(窓開放?)";
+							a_alert3.description = `
+								<div style="color:white;font-size:1.2em;min-width:250px;background-color:rgba(230,126,34,0.2);padding:10px;">
+									<h2 style="margin:0;color:#e67e22;border-bottom:3px solid #e67e22;">空調効率低下</h2>
+									<p style="margin:15px 0;text-align:center;font-weight:bold;">エアコンが効いていません</p>
+									<ul style="text-align:left;font-size:0.9em;color:#eee;">
+										<li>室温: ${G_Data.roomTemp} ℃ (適正外)</li>
+										<li>原因: 窓の開放、故障など</li>
+									</ul>
+									<p style="text-align:center;color:#fff;border:1px solid #fff;padding:5px;">窓の確認・点検を推奨</p>
+								</div>`;
+						} else {
+							// 正常
+							a_alert3.title = "✅ 省エネ運転中";
+							a_alert3.description = `
+								<div style="color:white;font-size:1.2em;min-width:200px;">
+									<h2 style="margin:0;color:#2ecc71;border-bottom:2px solid #2ecc71;">省エネ運転中</h2>
+									<p style="margin:10px 0;">空調エネルギー管理</p>
+									<div style="font-size:0.8em;color:#ccc;">室温: ${G_Data.roomTemp}℃ (適正)</div>
+								</div>`;
+						}
+					} else {
+						// エアコンOFF
+						a_alert3.title = "✅ 空調停止中";
+						a_alert3.description = `
 							<div style="color:white;font-size:1.2em;min-width:200px;">
-								<h2 style="margin:0;color:${cl};border-bottom:2px solid ${cl};">${st}</h2>
-								<p style="margin:10px 0;">${reason}</p>
-								<div style="font-size:0.8em;color:#ccc;">
-									室内: ${G_Data.co2} / 外気: ${G_Data.co2_out}<br>
-									差分: ${diff} ppm
-								</div>
+								<h2 style="margin:0;color:#95a5a6;border-bottom:2px solid #95a5a6;">空調停止中</h2>
+								<p>エネルギーロスはありません</p>
 							</div>`;
 					}
 				}
@@ -210,11 +251,15 @@
 					const isOn = (d1 == 1);
 					const setTemp = d2 || "--";
 					const camTemp = d3 || "--";
+
+					G_Data.acOn = isOn;
+					G_Data.roomTemp = (d3 !== null) ? Number(d3) : null;
+
 					const acColor = isOn ? "#00ff00" : "#aaaaaa";
 					a_ac.title = isOn ? "🟢 空調: ON" : "⚫ 空調: OFF";
 					a_ac.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:${acColor}; border-bottom:2px solid ${acColor};">${isOn?"稼働中":"停止中"}</h2><p style="margin:10px 0;">設定: <b>${setTemp}℃</b><br>室温: <b>${camTemp}℃</b></p><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${lastTimeStr}</p></div>`;
 
-					// 気圧, ガス, PM2.5
+					// 気圧, ガス, PM2.5 (省略せず記載)
 					const rawPres = findValidValue(data, "d5");
 					if (rawPres) {
 						const pres = Number(rawPres).toFixed(1);
@@ -258,6 +303,12 @@
 						lastTimeStr = lastDateObj.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
 						if(G_Data.hour === null) G_Data.hour = lastDateObj.getHours(); 
 					}
+
+					// ★ ドアの5分開放チェック
+					let recentDoor = data.slice(-5);
+					let openCount = 0;
+					recentDoor.forEach(d => { if(d.d1 == 1) openCount++; });
+					G_Data.isDoorLongOpen = (recentDoor.length >= 5 && openCount === recentDoor.length);
 
 					const rawDoor = findValidValue(data, "d1");
 					const rawCo2 = findValidValue(data, "d2");
@@ -307,19 +358,17 @@
 						a_hum.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:#3498db; border-bottom:2px solid #3498db;">湿度</h2><div style="margin:15px 0; text-align:center;"><div style="font-size:2.0em;"><b>${rawHum} %</b></div></div><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${lastTimeStr}</p></div>`;
 					}
 
-					// 外気CO2 (d7)
 					if(rawCo2Out!==null) {
 						let cOut = Number(rawCo2Out);
 						a_co2_out.title = `外気CO2: ${cOut} ppm`;
 						a_co2_out.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:#8e44ad; border-bottom:2px solid #8e44ad;">外気 CO2</h2><div style="margin:15px 0; text-align:center;"><div style="font-size:2.0em;"><b>${cOut} ppm</b></div></div><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${lastTimeStr}</p></div>`;
 					} else { a_co2_out.title = "外気CO2: --"; }
 
-					// 外気温 (d8)
 					if(rawTempOut!==null) {
 						let tOut = Number(rawTempOut);
 						let tCol = "#e67e22";
 						a_temp_out.title = `外気温: ${tOut} ℃`;
-						a_temp_out.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:${tCol}; border-bottom:2px solid ${tCol};">外気温</h2><div style="margin:15px 0; text-align:center;"><div style="font-size:2.0em;"><b>${tOut} ℃</b></div></div><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${lastTimeStr}</p></div>`;
+						a_temp_out.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:#e67e22; border-bottom:2px solid #e67e22;">外気温</h2><div style="margin:15px 0; text-align:center;"><div style="font-size:2.0em;"><b>${tOut} ℃</b></div></div><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${lastTimeStr}</p></div>`;
 					} else { a_temp_out.title = "外気温: --"; }
 
 					runAnalysis();
@@ -331,7 +380,7 @@
 			updateSensors();
 			setInterval(() => { updateCameraData(); updateSensors(); }, 60000);
 			
-			const allTags = [a_ac, a_pres, a_gas, a_pm25, a_lux, a_cpu, a_co2, a_hum, a_door, a_co2_out, a_temp_out, a_alert1, a_alert2];
+			const allTags = [a_ac, a_pres, a_gas, a_pm25, a_lux, a_cpu, a_co2, a_hum, a_door, a_co2_out, a_temp_out, a_alert1, a_alert2, a_alert3];
 			allTags.forEach(tag => {
 				tag.domElement.addEventListener("click", () => {
 					updateCameraData();
