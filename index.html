@@ -39,7 +39,7 @@
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("外気センサー位置修正 (3.85, 1.17, -0.92)");
+		viewer.setDescription("消し忘れ判定: 在室中表記へ変更");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -79,32 +79,18 @@
 			let a_door = new Potree.Annotation({ position: [4.34, 1.22, 0.28], title: "ドア", description: "..." });
 			viewer.scene.annotations.add(a_door);
 
-			// --- 外気センサー群 (位置修正) ---
-			
-			// 外気CO2 (3.85, 1.17, -0.92)
-			let a_co2_out = new Potree.Annotation({ 
-				position: [3.85, 1.17, -0.92], 
-				title: "外気CO2", 
-				description: "..." 
-			});
+			// 外気系
+			let a_co2_out = new Potree.Annotation({ position: [3.85, 1.17, -0.92], title: "外気CO2", description: "..." });
 			viewer.scene.annotations.add(a_co2_out);
-
-			// 外気温 (3.85, 1.17, -0.62) ※重ならないよう30cm上に配置
-			let a_temp_out = new Potree.Annotation({ 
-				position: [3.85, 1.17, -0.62], 
-				title: "外気温", 
-				description: "..." 
-			});
+			let a_temp_out = new Potree.Annotation({ position: [3.85, 1.17, -0.62], title: "外気温", description: "..." });
 			viewer.scene.annotations.add(a_temp_out);
-
 
 			// ==========================================
 			// ★ 分析用タグ
 			// ==========================================
-			// 1. 換気アラート
 			let a_alert1 = new Potree.Annotation({ position: [5.77, 5.95, 0.50], title: "分析中...", description: "..." });
 			viewer.scene.annotations.add(a_alert1);
-			// 2. 照明アラート
+			
 			let a_alert2 = new Potree.Annotation({ position: [2.77, 4.16, 2.00], title: "分析中...", description: "..." });
 			viewer.scene.annotations.add(a_alert2);
 
@@ -155,21 +141,49 @@
 					}
 				}
 
-				// --- 分析2: 照明消し忘れ (430ppm閾値 & 50lx閾値) ---
-				if (G_Data.co2 !== null && G_Data.lux !== null) {
+				// --- 分析2: 照明消し忘れ (外気CO2連動型) ---
+				// 条件: 夜間(0-6時) & 点灯(>=35lx) & (室内CO2 < 外気CO2 + 50)
+				if (G_Data.co2 !== null && G_Data.lux !== null && G_Data.co2_out !== null) {
 					const isNight = (G_Data.hour >= 0 && G_Data.hour < 6);
-					const isEmpty = (G_Data.co2 < 430); 
-					const isLightOn = (G_Data.lux >= 50);
+					const isLightOn = (G_Data.lux >= 35);
+					
+					const diff = G_Data.co2 - G_Data.co2_out;
+					const isEmpty = (diff < 50); 
 
 					if (isNight && isEmpty && isLightOn) {
+						// 誰もいないのに点灯
 						a_alert2.title = "⚠️ 照明消し忘れ？";
-						a_alert2.description = `<div style="color:white;font-size:1.2em;min-width:250px;background-color:rgba(241,196,15,0.2);padding:10px;"><h2 style="margin:0;color:#f1c40f;border-bottom:3px solid #f1c40f;">消し忘れ警告</h2><p style="margin:10px 0;">不在(430未満)ですが点灯中</p></div>`;
+						a_alert2.description = `
+							<div style="color:white;font-size:1.2em;min-width:250px;background-color:rgba(241,196,15,0.2);padding:10px;">
+								<h2 style="margin:0;color:#f1c40f;border-bottom:3px solid #f1c40f;">消し忘れ警告</h2>
+								<p style="margin:10px 0; font-weight:bold;">無人ですが点灯中です</p>
+								<ul style="text-align:left;font-size:0.9em;color:#eee;">
+									<li>時刻: ${G_Data.hour}時</li>
+									<li>照度: ${G_Data.lux} lx (点灯)</li>
+									<li>室内CO2: ${G_Data.co2} ppm</li>
+									<li>外気CO2: ${G_Data.co2_out} ppm</li>
+									<li>差分: ${diff} ppm (不在判定)</li>
+								</ul>
+							</div>`;
 					} else {
-						let st="照明 OK", cl="#2ecc71";
-						if(!isNight) {st="監視対象外(昼)"; cl="#95a5a6";}
-						else if(isNight && !isEmpty) {st="残業中"; cl="#3498db";}
+						// 正常または在室中
+						let st="照明 OK", cl="#2ecc71", reason="正常";
+						
+						if(!isNight) { st="監視対象外(昼)"; cl="#95a5a6"; reason="昼間"; }
+						// ★ここを変更: "残業中" -> "在室中"
+						else if(isNight && !isEmpty) { st="在室中"; cl="#3498db"; reason="在室検知(CO2差分あり)"; }
+						else if(isNight && isEmpty && !isLightOn) { st="消灯確認済"; cl="#2ecc71"; reason="無人・消灯よし"; }
+
 						a_alert2.title = `✅ ${st}`;
-						a_alert2.description = `<div style="color:white;font-size:1.2em;min-width:200px;"><h2 style="margin:0;color:${cl};border-bottom:2px solid ${cl};">${st}</h2><p>監視中</p></div>`;
+						a_alert2.description = `
+							<div style="color:white;font-size:1.2em;min-width:200px;">
+								<h2 style="margin:0;color:${cl};border-bottom:2px solid ${cl};">${st}</h2>
+								<p style="margin:10px 0;">${reason}</p>
+								<div style="font-size:0.8em;color:#ccc;">
+									室内: ${G_Data.co2} / 外気: ${G_Data.co2_out}<br>
+									差分: ${diff} ppm
+								</div>
+							</div>`;
 					}
 				}
 			}
