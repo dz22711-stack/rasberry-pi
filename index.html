@@ -39,7 +39,7 @@
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("全6分析: 火災予兆・ガス・エネルギー・快適性・換気・照明");
+		viewer.setDescription("軽量版: 6つの分析 & 1分自動更新 (詳細表示)");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -86,28 +86,22 @@
 			// ==========================================
 			// ★ 分析用タグ (Alert 1~6)
 			// ==========================================
-			// 1. 換気
 			let a_alert1 = new Potree.Annotation({ position: [5.77, 5.95, 0.50], title: "分析中...", description: "..." });
 			viewer.scene.annotations.add(a_alert1);
-			// 2. 消し忘れ
+			
 			let a_alert2 = new Potree.Annotation({ position: [2.77, 4.16, 2.00], title: "分析中...", description: "..." });
 			viewer.scene.annotations.add(a_alert2);
-			// 3. 空調ロス
+			
 			let a_alert3 = new Potree.Annotation({ position: [5.87, 7.79, 1.59], title: "分析中...", description: "..." });
 			viewer.scene.annotations.add(a_alert3);
-			// 4. 快適性
+			
 			let a_alert4 = new Potree.Annotation({ position: [4.11, 1.33, 1.40], title: "分析中...", description: "..." });
 			viewer.scene.annotations.add(a_alert4);
-			// 5. 日射負荷
+			
 			let a_alert5 = new Potree.Annotation({ position: [10.51, 7.76, 1.54], title: "分析中...", description: "..." });
 			viewer.scene.annotations.add(a_alert5);
 			
-			// 6. 火災予兆 (NEW! -0.45, 5.13, 1.47)
-			let a_alert6 = new Potree.Annotation({ 
-				position: [-0.45, 5.13, 1.47], 
-				title: "分析中...", 
-				description: "..." 
-			});
+			let a_alert6 = new Potree.Annotation({ position: [-0.45, 5.13, 1.47], title: "分析中...", description: "..." });
 			viewer.scene.annotations.add(a_alert6);
 
 
@@ -118,7 +112,7 @@
 				co2: null, door: null, lux: null, hour: null, 
 				co2_out: null, temp_out: null, 
 				acOn: null, roomTemp: null, hum: null,
-				gas: null, tempRise: 0, // ★ガスと温度変化率を追加
+				gas: null, tempRise: 0,
 				isDoorLongOpen: false 
 			};
 
@@ -164,7 +158,7 @@
 					}
 				}
 
-				// --- 2. 消し忘れ ---
+				// --- 2. 消し忘れ (Lux35 / CO2差分50) ---
 				if (G_Data.co2 !== null && G_Data.lux !== null && G_Data.co2_out !== null) {
 					const isNight = (G_Data.hour >= 0 && G_Data.hour < 6);
 					const isLightOn = (G_Data.lux >= 35);
@@ -183,7 +177,7 @@
 					}
 				}
 
-				// --- 3. 空調ロス ---
+				// --- 3. 空調ロス (ドア5分/室温異常) ---
 				if (G_Data.acOn !== null && G_Data.roomTemp !== null) {
 					if (G_Data.acOn) {
 						if (G_Data.isDoorLongOpen) {
@@ -202,25 +196,68 @@
 					}
 				}
 
-				// --- 4. 快適性 ---
+				// --- 4. 快適性 (DI) ---
 				if (G_Data.acOn !== null && G_Data.roomTemp !== null && G_Data.hum !== null) {
 					if (G_Data.acOn) {
 						const di = calcDI(G_Data.roomTemp, G_Data.hum);
+						const diVal = di.toFixed(1);
+
 						if (di >= 75) {
+							// 不快
 							if (G_Data.hum >= 60) {
+								// 原因は湿度
 								a_alert4.title = "⚠️ 蒸し暑い(除湿推奨)";
-								a_alert4.description = `<div style="color:white;font-size:1.2em;min-width:250px;background-color:rgba(52,152,219,0.3);padding:10px;"><h2 style="margin:0;color:#3498db;border-bottom:3px solid #3498db;">除湿推奨</h2><p>湿度${G_Data.hum}% (不快)</p></div>`;
+								a_alert4.description = `
+									<div style="color:white;font-size:1.2em;min-width:250px;background-color:rgba(52, 152, 219, 0.3);padding:10px;">
+										<h2 style="margin:0;color:#3498db;border-bottom:3px solid #3498db;">除湿推奨</h2>
+										<p style="margin:10px 0;">湿度が原因で不快です</p>
+										<ul style="text-align:left;font-size:0.9em;color:#eee;">
+											<li>不快指数: ${diVal}</li>
+											<li>湿度: ${G_Data.hum}%</li>
+											<li>室温: ${G_Data.roomTemp}℃</li>
+										</ul>
+									</div>`;
 							} else {
+								// 原因は温度
 								a_alert4.title = "⚠️ 暑い(設定下げて)";
-								a_alert4.description = `<div style="color:white;font-size:1.2em;min-width:250px;background-color:rgba(231,76,60,0.2);padding:10px;"><h2 style="margin:0;color:#e74c3c;border-bottom:3px solid #e74c3c;">温度高め</h2><p>室温${G_Data.roomTemp}℃ (不快)</p></div>`;
+								a_alert4.description = `
+									<div style="color:white;font-size:1.2em;min-width:250px;background-color:rgba(231, 76, 60, 0.2);padding:10px;">
+										<h2 style="margin:0;color:#e74c3c;border-bottom:3px solid #e74c3c;">温度高め</h2>
+										<p style="margin:10px 0;">室温が高く不快です</p>
+										<ul style="text-align:left;font-size:0.9em;color:#eee;">
+											<li>不快指数: ${diVal}</li>
+											<li>室温: ${G_Data.roomTemp}℃</li>
+										</ul>
+									</div>`;
 							}
 						} else {
-							a_alert4.title = `✅ 快適 (DI:${di.toFixed(1)})`;
-							a_alert4.description = `<div style="color:white;font-size:1.2em;min-width:200px;"><h2 style="margin:0;color:#2ecc71;border-bottom:2px solid #2ecc71;">快適</h2><p>バランス良好</p></div>`;
+							// 快適 (★ここを修正)
+							a_alert4.title = `✅ 快適 (DI:${diVal})`;
+							a_alert4.description = `
+								<div style="color:white;font-size:1.2em;min-width:200px;">
+									<h2 style="margin:0;color:#2ecc71;border-bottom:2px solid #2ecc71;">快適な環境</h2>
+									<p style="margin:10px 0;">空調バランス良好</p>
+									<ul style="text-align:left;font-size:0.9em;color:#eee;">
+										<li>不快指数: ${diVal}</li>
+										<li>室温: ${G_Data.roomTemp}℃</li>
+										<li>湿度: ${G_Data.hum}%</li>
+									</ul>
+								</div>`;
 						}
 					} else {
-						a_alert4.title = "AC停止中";
-						a_alert4.description = "---";
+						// AC OFF
+						const di = calcDI(G_Data.roomTemp, G_Data.hum).toFixed(1);
+						a_alert4.title = `AC停止中 (DI:${di})`;
+						a_alert4.description = `
+							<div style="color:white;font-size:1.2em;min-width:200px;">
+								<h2 style="margin:0;color:#95a5a6;border-bottom:2px solid #95a5a6;">AC停止中</h2>
+								<p>現在環境</p>
+								<ul style="text-align:left;font-size:0.9em;color:#eee;">
+									<li>不快指数: ${di}</li>
+									<li>室温: ${G_Data.roomTemp}℃</li>
+									<li>湿度: ${G_Data.hum}%</li>
+								</ul>
+							</div>`;
 					}
 				}
 
@@ -248,48 +285,21 @@
 					}
 				}
 
-				// --- 6. 火災予兆 (NEW!) ---
+				// --- 6. 火災予兆 ---
 				if (G_Data.gas !== null && G_Data.roomTemp !== null) {
-					// ガス反応あり(抵抗値低下 < 10000)
 					const isGasReacting = (G_Data.gas < 10000);
-					
-					// 温度急上昇 (直近変化 > 2.0) または 高温 (> 40)
 					const isTempRising = (G_Data.tempRise > 2.0);
 					const isVeryHot = (G_Data.roomTemp > 40);
 
 					if (isGasReacting && (isTempRising || isVeryHot)) {
-						// 【危険】ガス反応 ＋ 熱異常
 						a_alert6.title = "🔥 火災予兆検知！";
-						a_alert6.description = `
-							<div style="color:white; font-size:1.2em; min-width:250px; background-color:rgba(231, 76, 60, 0.4); padding:10px;">
-								<h2 style="margin:0;color:#c0392b;border-bottom:3px solid #c0392b; font-weight:bold;">🔥 DANGER 🔥</h2>
-								<p style="margin:15px 0;text-align:center;font-weight:bold; font-size:1.1em;">ガス反応および異常熱を検知</p>
-								<ul style="text-align:left;font-size:0.9em;color:#eee;">
-									<li>ガス: <span style="color:#e74c3c;">反応あり (${(G_Data.gas/1000).toFixed(1)}kΩ)</span></li>
-									<li>温度: <span style="color:#e74c3c;">${G_Data.roomTemp}℃ (上昇率:${G_Data.tempRise.toFixed(1)})</span></li>
-								</ul>
-								<p style="text-align:center;border:2px solid #c0392b;padding:5px;background:#c0392b;color:white;">直ちに確認してください</p>
-							</div>`;
-					} 
-					else if (isGasReacting) {
-						// 【注意】ガスのみ
+						a_alert6.description = `<div style="color:white;font-size:1.2em;min-width:250px;background-color:rgba(231,76,60,0.4);padding:10px;"><h2 style="margin:0;color:#c0392b;border-bottom:3px solid #c0392b;">🔥 DANGER 🔥</h2><p>ガス反応＋熱異常</p></div>`;
+					} else if (isGasReacting) {
 						a_alert6.title = "⚠️ ガス異常";
-						a_alert6.description = `
-							<div style="color:white;font-size:1.2em;min-width:250px;background-color:rgba(230,126,34,0.2);padding:10px;">
-								<h2 style="margin:0;color:#e67e22;border-bottom:3px solid #e67e22;">ガスセンサー反応</h2>
-								<p style="margin:10px 0;">空気が著しく汚れています</p>
-								<div style="font-size:0.8em;color:#ccc;">値: ${(G_Data.gas/1000).toFixed(1)} kΩ</div>
-							</div>`;
-					} 
-					else {
-						// 【正常】
+						a_alert6.description = `<div style="color:white;font-size:1.2em;min-width:250px;background-color:rgba(230,126,34,0.2);padding:10px;"><h2 style="margin:0;color:#e67e22;border-bottom:3px solid #e67e22;">ガス反応</h2><p>値低下</p></div>`;
+					} else {
 						a_alert6.title = "✅ 安全監視中";
-						a_alert6.description = `
-							<div style="color:white;font-size:1.2em;min-width:200px;">
-								<h2 style="margin:0;color:#2ecc71;border-bottom:2px solid #2ecc71;">防災監視 OK</h2>
-								<p>異常なし</p>
-								<div style="font-size:0.8em;color:#ccc;">ガス・熱とも正常範囲</div>
-							</div>`;
+						a_alert6.description = `<div style="color:white;font-size:1.2em;min-width:200px;"><h2 style="margin:0;color:#2ecc71;border-bottom:2px solid #2ecc71;">防災監視 OK</h2></div>`;
 					}
 				}
 			}
@@ -310,13 +320,11 @@
 						G_Data.hour = dt.getHours(); 
 					}
 
-					// ★ 温度変化率の計算 (最新 - 最古)
+					// 温度変化率
 					if(data.length >= 2) {
 						let newestT = Number(data[data.length-1].d3);
 						let oldestT = Number(data[0].d3);
-						if(!isNaN(newestT) && !isNaN(oldestT)) {
-							G_Data.tempRise = newestT - oldestT; // プラスなら上昇
-						}
+						if(!isNaN(newestT) && !isNaN(oldestT)) G_Data.tempRise = newestT - oldestT;
 					}
 
 					const d1 = findValidValue(data, "d1");
@@ -329,7 +337,6 @@
 					G_Data.acOn = isOn;
 					G_Data.roomTemp = (d3 !== null) ? Number(d3) : null;
 
-					// ★ ガスデータの保存
 					const rawGas = findValidValue(data, "d6");
 					if (rawGas !== null) G_Data.gas = Number(rawGas);
 
