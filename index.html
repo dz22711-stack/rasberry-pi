@@ -39,7 +39,7 @@
 		viewer.setFOV(60);
 		viewer.setPointBudget(1_000_000);
 		viewer.loadSettingsFromURL();
-		viewer.setDescription("外気CO2追加 (SCD40)");
+		viewer.setDescription("外気センサー位置修正 (3.85, 1.17, -0.92)");
 		
 		viewer.loadGUI(() => {
 			viewer.setLanguage('en');
@@ -58,7 +58,7 @@
 			scene.addPointCloud(pointcloud);
 			
 			// ==========================================
-			// 1. 通常センサータグ (計10個)
+			// 1. 通常センサータグ
 			// ==========================================
 			let a_ac = new Potree.Annotation({ position: [5.74, 1.52, 0.60], title: "空調", description: "..." });
 			viewer.scene.annotations.add(a_ac);
@@ -79,13 +79,24 @@
 			let a_door = new Potree.Annotation({ position: [4.34, 1.22, 0.28], title: "ドア", description: "..." });
 			viewer.scene.annotations.add(a_door);
 
-			// ★ NEW! 外気CO2 (3.5, 1.42, -0.92)
+			// --- 外気センサー群 (位置修正) ---
+			
+			// 外気CO2 (3.85, 1.17, -0.92)
 			let a_co2_out = new Potree.Annotation({ 
-				position: [3.5, 1.42, -0.92], 
+				position: [3.85, 1.17, -0.92], 
 				title: "外気CO2", 
 				description: "..." 
 			});
 			viewer.scene.annotations.add(a_co2_out);
+
+			// 外気温 (3.85, 1.17, -0.62) ※重ならないよう30cm上に配置
+			let a_temp_out = new Potree.Annotation({ 
+				position: [3.85, 1.17, -0.62], 
+				title: "外気温", 
+				description: "..." 
+			});
+			viewer.scene.annotations.add(a_temp_out);
+
 
 			// ==========================================
 			// ★ 分析用タグ
@@ -102,7 +113,7 @@
 			// 2. 変数管理
 			// ==========================================
 			let G_Data = {
-				co2: null, door: null, lux: null, hour: null, co2_out: null
+				co2: null, door: null, lux: null, hour: null, co2_out: null, temp_out: null
 			};
 
 			// ==========================================
@@ -239,12 +250,14 @@
 					const rawLux = findValidValue(data, "d5");
 					const rawCpu = findValidValue(data, "d6");
 					const rawHum = findValidValue(data, "d4");
-					const rawCo2Out = findValidValue(data, "d7"); // ★NEW: 外気CO2
+					const rawCo2Out = findValidValue(data, "d7");
+					const rawTempOut = findValidValue(data, "d8");
 
 					if(rawDoor!==null) G_Data.door = Number(rawDoor);
 					if(rawCo2!==null) G_Data.co2 = Number(rawCo2);
 					if(rawLux!==null) G_Data.lux = Number(rawLux);
 					if(rawCo2Out!==null) G_Data.co2_out = Number(rawCo2Out);
+					if(rawTempOut!==null) G_Data.temp_out = Number(rawTempOut);
 
 					// 1. 各タグ更新
 					let doorStatus="不明";
@@ -280,21 +293,20 @@
 						a_hum.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:#3498db; border-bottom:2px solid #3498db;">湿度</h2><div style="margin:15px 0; text-align:center;"><div style="font-size:2.0em;"><b>${rawHum} %</b></div></div><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${lastTimeStr}</p></div>`;
 					}
 
-					// ★NEW! 外気CO2 (d7)
+					// 外気CO2 (d7)
 					if(rawCo2Out!==null) {
 						let cOut = Number(rawCo2Out);
 						a_co2_out.title = `外気CO2: ${cOut} ppm`;
-						a_co2_out.description = `
-							<div style="color:white; font-size:1.2em; min-width:200px;">
-								<h2 style="margin:0; color:#8e44ad; border-bottom:2px solid #8e44ad;">外気 CO2</h2>
-								<div style="margin:15px 0; text-align:center;">
-									<div style="font-size:2.0em;"><b>${cOut} ppm</b></div>
-								</div>
-								<p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${lastTimeStr}</p>
-							</div>`;
-					} else {
-						a_co2_out.title = "外気CO2: --";
-					}
+						a_co2_out.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:#8e44ad; border-bottom:2px solid #8e44ad;">外気 CO2</h2><div style="margin:15px 0; text-align:center;"><div style="font-size:2.0em;"><b>${cOut} ppm</b></div></div><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${lastTimeStr}</p></div>`;
+					} else { a_co2_out.title = "外気CO2: --"; }
+
+					// 外気温 (d8)
+					if(rawTempOut!==null) {
+						let tOut = Number(rawTempOut);
+						let tCol = "#e67e22";
+						a_temp_out.title = `外気温: ${tOut} ℃`;
+						a_temp_out.description = `<div style="color:white; font-size:1.2em; min-width:200px;"><h2 style="margin:0; color:${tCol}; border-bottom:2px solid ${tCol};">外気温</h2><div style="margin:15px 0; text-align:center;"><div style="font-size:2.0em;"><b>${tOut} ℃</b></div></div><p style="text-align:right; font-size:0.8em; color:#ccc;">更新: ${lastTimeStr}</p></div>`;
+					} else { a_temp_out.title = "外気温: --"; }
 
 					runAnalysis();
 				}).catch(e=>{});
@@ -305,7 +317,7 @@
 			updateSensors();
 			setInterval(() => { updateCameraData(); updateSensors(); }, 60000);
 			
-			const allTags = [a_ac, a_pres, a_gas, a_pm25, a_lux, a_cpu, a_co2, a_hum, a_door, a_co2_out, a_alert1, a_alert2];
+			const allTags = [a_ac, a_pres, a_gas, a_pm25, a_lux, a_cpu, a_co2, a_hum, a_door, a_co2_out, a_temp_out, a_alert1, a_alert2];
 			allTags.forEach(tag => {
 				tag.domElement.addEventListener("click", () => {
 					updateCameraData();
